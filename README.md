@@ -1,4 +1,4 @@
-# SAR 预训练代码
+# 训练代码
 
 本目录只包含预训练、环境配置、启动脚本和少量冒烟测试图像。建议在 Linux + NVIDIA GPU 环境运行。
 
@@ -6,7 +6,7 @@
 
 推荐配置：
 
-- 4×NVIDIA A100（40GB 或 80GB 均可）
+- 4×NVIDIA A100
 - Linux x86_64
 - NVIDIA Driver 支持 CUDA 12.1
 - Conda 或 Mamba
