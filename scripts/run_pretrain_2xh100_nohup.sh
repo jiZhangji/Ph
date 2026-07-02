@@ -11,11 +11,15 @@ LOG_FILE="${LOG_FILE:-logs/${RUN_NAME}.log}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 export DATA_PATH="${DATA_PATH:-dataset/modelscope/extracted/Pretraining_dataset}"
-export OUTPUT_DIR="${OUTPUT_DIR:-runs/${RUN_NAME}}"
+if [ -z "${OUTPUT_DIR+x}" ] || [ "$OUTPUT_DIR" = "runs/pretrain_2xh100" ]; then
+  export OUTPUT_DIR="runs/${RUN_NAME}"
+else
+  export OUTPUT_DIR
+fi
 export BATCH_SIZE="${BATCH_SIZE:-512}"
-export BLR="${BLR:-2.5e-4}"
+export BLR="${BLR:-1e-4}"
 export GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
-export LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
+export LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-10.0}"
 export INIT_CKPT="${INIT_CKPT:-}"
 export INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
 export SAVE_FREQ="${SAVE_FREQ:-10}"
