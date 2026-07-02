@@ -265,7 +265,9 @@ weights (`patch_embed`, `cls_token`, `pos_embed`, `blocks`, `norm`) and skips
 new task-specific modules and mismatched heads:
 
 ```bash
-export INIT_CKPT=/path/to/original_mae_pretrain.pth
+python scripts/download_mae_pretrained_weights.py --model base
+
+export INIT_CKPT=weights/mae_pretrain_vit_base.pth
 export INIT_CKPT_SCOPE=encoder
 bash scripts/run_pretrain_2xh100_nohup.sh
 ```
