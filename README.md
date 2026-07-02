@@ -249,12 +249,12 @@ cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Ge
 
 export CUDA_VISIBLE_DEVICES=0,1
 export DATA_PATH=dataset/modelscope/extracted/Pretraining_dataset
-export RUN_NAME=pretrain_2xh100_lfst10_blr1e-4
+export RUN_NAME=pretrain_2xh100_lfst1_blr2p5e-4
 export OUTPUT_DIR=runs/$RUN_NAME
 export BATCH_SIZE=512
-export BLR=1e-4
+export BLR=2.5e-4
 export GRAD_LOSS_WEIGHT=1.0
-export LFST_LOSS_WEIGHT=10.0
+export LFST_LOSS_WEIGHT=1.0
 
 bash scripts/run_pretrain_2xh100_nohup.sh
 ```
@@ -276,14 +276,10 @@ If CUDA OOM appears, reduce the per-GPU batch size and rerun with a new
 `RUN_NAME`:
 
 ```bash
-export RUN_NAME=pretrain_2xh100_lfst10_blr1e-4_bs256
+export RUN_NAME=pretrain_2xh100_lfst1_blr2p5e-4_bs256
 export BATCH_SIZE=256
 bash scripts/run_pretrain_2xh100_nohup.sh
 ```
-
-For the 2xH100 setting with `BATCH_SIZE=512`, `BLR=1e-4` gives an actual peak
-learning rate of about `4e-4`. This is more stable than the earlier `BLR=2.5e-4`
-setting, whose actual peak learning rate was about `1e-3`.
 
 The H100 script uses `torchrun --standalone --nproc_per_node=2`, BF16 mixed
 precision, TF32 matrix math enabled in `Pretraining/main_pretrain.py`, and DDP
