@@ -555,17 +555,10 @@ class MaskedAutoencoderViT(nn.Module):
 
         # 在 __init__ 中的定义应该类似这样：
         self.blocks = nn.ModuleList()
-        self.sfafm_blocks = nn.ModuleList()
         
         for i in range(depth):
             # 添加常规 ViT
             self.blocks.append(Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer))
-            
-            # 论文中：SFAFM is inserted after every two ViT blocks
-            if (i + 1) % 2 == 0:
-                self.sfafm_blocks.append(SFAFM(embed_dim, reduction=4))
-            else:
-                self.sfafm_blocks.append(None) # 用 None 占位，保持与 self.blocks 索引完全一致
                 
         self.norm = norm_layer(embed_dim)
         
@@ -577,6 +570,8 @@ class MaskedAutoencoderViT(nn.Module):
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
         # 20250812--------------------------------------------------------------------------
+        # Late-stage spatial-frequency fusion: insert a single SFAFM after
+        # the last encoder block and before the lightweight decoder.
         self.img_SFAFM_process = SFAFM(embed_dim, reduction=4)
         
     
@@ -860,21 +855,12 @@ class MaskedAutoencoderViT(nn.Module):
         cls_tokens = cls_tokens + self.pos_embed[:, :1, :]
         x = torch.cat((cls_tokens, x), dim=1)
 
-        # ----- encoder (带有 SFAFM 穿插逻辑) -----
+        # ----- encoder -----
         for i, blk in enumerate(self.blocks):
             # 1. 过基础的 ViT Block
             x = blk(x)
-            
-            # 2. 检查当前层后面是否跟着 SFAFM
-            sfafm_blk = self.sfafm_blocks[i]
-            if sfafm_blk is not None:
-                # 局部窗口变 2D -> SFAFM -> 变回 1D
-                # 传入 window_size 即可，因为你的子网格大小就是 window_size * window_size
-                x_2d, cls_token = self._sparse_1d_to_dense_2d(x, window_size)
-                x_2d = sfafm_blk(x_2d) 
-                x = self._dense_2d_to_sparse_1d(x_2d, cls_token)
         
-        # ------ 最后一个 SF-Block (SFAFM) ------
+        # ------ late-stage SF-Block (SFAFM), after the last encoder block ------
         x_2d, cls_token = self._sparse_1d_to_dense_2d(x, window_size)
         x_2d = self.img_SFAFM_process(x_2d)
         x = self._dense_2d_to_sparse_1d(x_2d, cls_token)

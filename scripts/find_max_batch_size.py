@@ -15,17 +15,26 @@ def parse_args():
     parser.add_argument("--lower", type=int, default=1)
     parser.add_argument("--upper", type=int, default=1024)
     parser.add_argument("--amp-dtype", choices=("bf16", "fp16"), default="bf16")
+    parser.add_argument("--model", default="mae_vit_base_patch16")
+    parser.add_argument("--window-size", type=int, default=7)
+    parser.add_argument("--num-window", type=int, default=4)
+    parser.add_argument("--mask-ratio", type=float, default=0.8)
     return parser.parse_args()
 
 
-def run_probe(root, gpus, batch_size, amp_dtype):
+def run_probe(root, args, batch_size):
     command = [
         sys.executable, "-m", "torch.distributed.run", "--standalone",
-        f"--nproc_per_node={gpus}", "Pretraining/main_pretrain.py",
+        f"--nproc_per_node={args.gpus}", "Pretraining/main_pretrain.py",
+        "--model", args.model,
         "--synthetic_data", "--synthetic_length", "65536",
         "--epochs", "1", "--max_train_steps", "1",
         "--batch_size", str(batch_size), "--num_workers", "0",
-        "--amp_dtype", amp_dtype, "--output_dir", "", "--log_dir", "",
+        "--amp_dtype", args.amp_dtype,
+        "--window_size", str(args.window_size),
+        "--num_window", str(args.num_window),
+        "--mask_ratio", str(args.mask_ratio),
+        "--output_dir", "", "--log_dir", "",
         "--init_ckpt", "", "--save_freq", "0",
     ]
     env = os.environ.copy()
@@ -51,7 +60,7 @@ def main():
     while low <= high:
         candidate = (low + high) // 2
         print(f"Probing per-GPU batch size {candidate} on {args.gpus} GPU(s)...", flush=True)
-        success, error_tail = run_probe(root, args.gpus, candidate, args.amp_dtype)
+        success, error_tail = run_probe(root, args, candidate)
         if success:
             best = candidate
             low = candidate + 1
