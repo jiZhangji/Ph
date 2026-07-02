@@ -23,8 +23,19 @@ EPOCHS="${EPOCHS:-40}"
 BATCH_SIZE="${DOWNSTREAM_BATCH_SIZE:-50}"
 LR="${DOWNSTREAM_LR:-1e-3}"
 WEIGHT_DECAY="${DOWNSTREAM_WEIGHT_DECAY:-5e-4}"
-NUM_WORKERS="${NUM_WORKERS:-8}"
+ADAM_BETA1="${DOWNSTREAM_ADAM_BETA1:-0.9}"
+ADAM_BETA2="${DOWNSTREAM_ADAM_BETA2:-0.999}"
+LR_SCHEDULER="${DOWNSTREAM_LR_SCHEDULER:-cosine}"
+WARMUP_EPOCHS="${DOWNSTREAM_WARMUP_EPOCHS:-2}"
+WARMUP_CONS_LR="${DOWNSTREAM_WARMUP_CONS_LR:-1e-5}"
+TRAIN_AUG="${DOWNSTREAM_TRAIN_AUG:-none}"
+NUM_WORKERS="${DOWNSTREAM_NUM_WORKERS:-0}"
 DEVICE="${DEVICE:-cuda}"
+EXTRA_ARGS=()
+
+if [[ "${DOWNSTREAM_EVAL_TRAIN:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--eval_train)
+fi
 
 if [[ -n "$INHERITED_BATCH_SIZE" && -z "${DOWNSTREAM_BATCH_SIZE:-}" ]]; then
   echo "WARNING: ignoring inherited BATCH_SIZE=$INHERITED_BATCH_SIZE; downstream uses BATCH_SIZE=$BATCH_SIZE"
@@ -45,5 +56,12 @@ python Downstream/main_fewshot.py \
   --batch_size "$BATCH_SIZE" \
   --lr "$LR" \
   --weight_decay "$WEIGHT_DECAY" \
+  --adam_beta1 "$ADAM_BETA1" \
+  --adam_beta2 "$ADAM_BETA2" \
+  --lr_scheduler "$LR_SCHEDULER" \
+  --warmup_epochs "$WARMUP_EPOCHS" \
+  --warmup_cons_lr "$WARMUP_CONS_LR" \
+  --train_aug "$TRAIN_AUG" \
   --num_workers "$NUM_WORKERS" \
-  --device "$DEVICE"
+  --device "$DEVICE" \
+  "${EXTRA_ARGS[@]}"

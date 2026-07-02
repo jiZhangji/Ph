@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import random
 import sys
 import time
@@ -125,25 +126,48 @@ def count_trainable_params(model: nn.Module) -> int:
     return sum(param.numel() for param in model.parameters() if param.requires_grad)
 
 
-def build_transforms(input_size: int):
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(
-            input_size, scale=(0.2, 1.0), interpolation=InterpolationMode.BICUBIC
-        ),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(contrast=0.5),
-        transforms.ToTensor(),
-    ])
+def build_transforms(input_size: int, train_aug: str):
     test_transform = transforms.Compose([
         transforms.Resize((input_size, input_size), interpolation=InterpolationMode.BICUBIC),
         transforms.ToTensor(),
     ])
+
+    if train_aug == "none":
+        train_transform = test_transform
+    elif train_aug == "light":
+        train_transform = transforms.Compose([
+            transforms.Resize((input_size, input_size), interpolation=InterpolationMode.BICUBIC),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(contrast=0.5),
+            transforms.ToTensor(),
+        ])
+    elif train_aug == "pretrain":
+        train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(
+                input_size, scale=(0.2, 1.0), interpolation=InterpolationMode.BICUBIC
+            ),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(contrast=0.5),
+            transforms.ToTensor(),
+        ])
+    else:
+        raise ValueError(f"Unknown train augmentation: {train_aug}")
+
     return train_transform, test_transform
 
 
-def accuracy(logits, labels):
-    preds = logits.argmax(dim=1)
-    return (preds == labels).float().mean().item() * 100.0
+def cosine_lr(epoch: int, args) -> float:
+    if args.lr_scheduler == "none":
+        return args.lr
+    if epoch < args.warmup_epochs:
+        return args.warmup_cons_lr
+    progress = (epoch - args.warmup_epochs) / max(1, args.epochs - args.warmup_epochs)
+    return args.lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+
+def set_optimizer_lr(optimizer, lr: float):
+    for group in optimizer.param_groups:
+        group["lr"] = lr
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device, protocol):
@@ -196,9 +220,10 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
     set_seed(seed)
     dataset_dir = resolve_dataset_dir(args.data_root, dataset_name, shots=shots)
     train_samples, test_samples, classes = build_fewshot_split(dataset_dir, shots, seed)
-    train_transform, test_transform = build_transforms(args.input_size)
+    train_transform, test_transform = build_transforms(args.input_size, args.train_aug)
 
     train_set = SARClassificationDataset(train_samples, transform=train_transform)
+    train_eval_set = SARClassificationDataset(train_samples, transform=test_transform)
     test_set = SARClassificationDataset(test_samples, transform=test_transform)
     generator = torch.Generator().manual_seed(seed)
     train_loader = DataLoader(
@@ -218,6 +243,14 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
         pin_memory=args.pin_mem,
         drop_last=False,
     )
+    train_eval_loader = DataLoader(
+        train_eval_set,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=False,
+    )
 
     backbone = load_backbone(args)
     model = PhyDClassifier(backbone, len(classes), use_sfafm=not args.no_sfafm_features)
@@ -230,7 +263,7 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
         (param for param in model.parameters() if param.requires_grad),
         lr=args.lr,
         weight_decay=args.weight_decay,
-        betas=(0.9, 0.95),
+        betas=(args.adam_beta1, args.adam_beta2),
     )
 
     run_dir = args.output_dir / dataset_name / protocol / f"{shots}shot" / f"seed{seed}"
@@ -239,7 +272,8 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
     print(
         f"Running {dataset_name} {protocol} {shots}-shot seed={seed}: "
         f"{len(train_samples)} train, {len(test_samples)} test, "
-        f"{len(classes)} classes, {count_trainable_params(model)} trainable params"
+        f"{len(classes)} classes, {count_trainable_params(model)} trainable params, "
+        f"dataset_dir={dataset_dir}, train_aug={args.train_aug}"
     )
 
     best_acc = 0.0
@@ -247,6 +281,8 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
     start_time = time.time()
     with log_path.open("w", encoding="utf-8") as handle:
         for epoch in range(args.epochs):
+            lr = cosine_lr(epoch, args)
+            set_optimizer_lr(optimizer, lr)
             train_loss, train_acc = train_one_epoch(
                 model, train_loader, optimizer, criterion, device, protocol
             )
@@ -260,6 +296,7 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
                 "shots": shots,
                 "seed": seed,
                 "epoch": epoch,
+                "lr": lr,
                 "train_loss": train_loss,
                 "train_acc": train_acc,
                 "test_loss": test_loss,
@@ -267,6 +304,12 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
                 "best_acc": best_acc,
                 "best_epoch": best_epoch,
             }
+            if args.eval_train:
+                train_eval_loss, train_eval_acc = evaluate(
+                    model, train_eval_loader, criterion, device
+                )
+                record["train_eval_loss"] = train_eval_loss
+                record["train_eval_acc"] = train_eval_acc
             handle.write(json.dumps(record) + "\n")
             handle.flush()
             print(record)
@@ -300,7 +343,14 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=5e-4)
-    parser.add_argument("--num_workers", type=int, default=8)
+    parser.add_argument("--adam_beta1", type=float, default=0.9)
+    parser.add_argument("--adam_beta2", type=float, default=0.999)
+    parser.add_argument("--lr_scheduler", choices=("cosine", "none"), default="cosine")
+    parser.add_argument("--warmup_epochs", type=int, default=2)
+    parser.add_argument("--warmup_cons_lr", type=float, default=1e-5)
+    parser.add_argument("--train_aug", choices=("none", "light", "pretrain"), default="none")
+    parser.add_argument("--eval_train", action="store_true")
+    parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--lfst_cutoff", type=int, default=30)
     parser.add_argument("--allow_random_init", action="store_true")

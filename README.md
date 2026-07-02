@@ -301,7 +301,9 @@ train_lr
 The downstream code follows the paper protocol: MSTAR, FUSAR-Ship, and
 SAR-ACD; 10/20/40-shot; fine-tuning and linear probing; 40 epochs; batch size
 50; AdamW with learning rate `1e-3` and weight decay `5e-4`; 10 independent
-random seeds.
+random seeds. The runner uses SAR-JEPA-style downstream defaults: no random
+image transform, AdamW beta2 `0.999`, 2 warmup epochs at `1e-5`, then cosine
+learning-rate decay.
 
 Run a quick path check first:
 
@@ -317,6 +319,24 @@ export PROTOCOLS=linear
 export SHOTS=10
 export SEEDS=0
 export EPOCHS=1
+export DOWNSTREAM_EVAL_TRAIN=1
+
+bash scripts/run_fewshot_all.sh
+```
+
+If a run gives suspiciously low accuracy, run a single MSTAR 10-shot diagnostic
+first. `train_eval_acc` should climb on the 100 support images; if it does not,
+the issue is likely model loading, feature extraction, or optimization rather
+than the test set:
+
+```bash
+export RUN_NAME=downstream_debug_mstar10
+export DATASETS=mstar
+export PROTOCOLS=finetune
+export SHOTS=10
+export SEEDS=0
+export EPOCHS=80
+export DOWNSTREAM_EVAL_TRAIN=1
 
 bash scripts/run_fewshot_all.sh
 ```
@@ -331,6 +351,7 @@ export DATA_ROOT=dataset/modelscope/extracted/classification_dataset
 export CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth
 export RUN_NAME=downstream_fewshot_paper
 export DOWNSTREAM_BATCH_SIZE=50
+export DOWNSTREAM_TRAIN_AUG=none
 
 bash scripts/run_fewshot_all_nohup.sh
 ```
