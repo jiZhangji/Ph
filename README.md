@@ -213,3 +213,55 @@ CUDA_VISIBLE_DEVICES=0,1 nvidia-smi
 ```bash
 tensorboard --logdir /path/to/output --port 6006
 ```
+
+## 10. ModelScope dataset download
+
+Download and extract the pretraining and classification datasets:
+
+```bash
+cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Generation/Ph
+
+pip install -U modelscope
+python scripts/download_modelscope_data.py
+```
+
+The default output paths are:
+
+```text
+dataset/modelscope/zips/Pretraining_dataset.zip
+dataset/modelscope/zips/classification_dataset.zip
+dataset/modelscope/extracted/Pretraining_dataset
+dataset/modelscope/extracted/classification_dataset
+```
+
+Check that code and data are ready:
+
+```bash
+bash scripts/check_code_and_data.sh
+```
+
+## 11. 2xH100 pretraining
+
+Run pretraining on two H100 GPUs:
+
+```bash
+cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Generation/Ph
+
+export CUDA_VISIBLE_DEVICES=0,1
+export DATA_PATH=dataset/modelscope/extracted/Pretraining_dataset
+export OUTPUT_DIR=runs/pretrain_2xh100
+export BATCH_SIZE=512
+
+bash scripts/pretrain_2xh100.sh
+```
+
+If CUDA OOM appears, reduce the per-GPU batch size and rerun:
+
+```bash
+export BATCH_SIZE=256
+bash scripts/pretrain_2xh100.sh
+```
+
+The H100 script uses `torchrun --standalone --nproc_per_node=2`, BF16 mixed
+precision, TF32 matrix math enabled in `Pretraining/main_pretrain.py`, and DDP
+with one process per GPU.
