@@ -330,6 +330,7 @@ export CUDA_VISIBLE_DEVICES=0
 export DATA_ROOT=dataset/modelscope/extracted/classification_dataset
 export CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth
 export RUN_NAME=downstream_fewshot_paper
+export DOWNSTREAM_BATCH_SIZE=50
 
 bash scripts/run_fewshot_all_nohup.sh
 ```
