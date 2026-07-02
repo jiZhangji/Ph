@@ -884,6 +884,27 @@ class MaskedAutoencoderViT(nn.Module):
 
         return pred_grad_like, pred_lfst, mask_indices, ids_restore
 
+    def forward_features(self, imgs, use_sfafm=True):
+        """Return CLS features for downstream classification."""
+        x = self.patch_embed(imgs).type(torch.float32)
+        x = x + self.pos_embed[:, 1:, :]
+
+        cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
+        cls_tokens = cls_tokens + self.pos_embed[:, :1, :]
+        x = torch.cat((cls_tokens, x), dim=1)
+
+        for blk in self.blocks:
+            x = blk(x)
+
+        if use_sfafm:
+            grid_size = self.img_size // self.patch_size
+            x_2d, cls_token = self._sparse_1d_to_dense_2d(x, grid_size)
+            x_2d = self.img_SFAFM_process(x_2d)
+            x = self._dense_2d_to_sparse_1d(x_2d, cls_token)
+
+        x = self.norm(x)
+        return x[:, 0]
+
     def forward_loss_lfst(self, imgs, pred_lfst, mask_indices, num_window, ids_restore):
         """
         imgs:       (N, 1, H, W)

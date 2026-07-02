@@ -295,3 +295,53 @@ train_loss_grad_weighted
 train_loss_lfst_weighted
 train_lr
 ```
+
+## 12. Few-shot downstream classification
+
+The downstream code follows the paper protocol: MSTAR, FUSAR-Ship, and
+SAR-ACD; 10/20/40-shot; fine-tuning and linear probing; 40 epochs; batch size
+50; AdamW with learning rate `1e-3` and weight decay `5e-4`; 10 independent
+random seeds.
+
+Run a quick path check first:
+
+```bash
+cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Generation/Ph
+
+export CUDA_VISIBLE_DEVICES=0
+export DATA_ROOT=dataset/modelscope/extracted/classification_dataset
+export CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth
+export RUN_NAME=downstream_smoke
+export DATASETS=mstar
+export PROTOCOLS=linear
+export SHOTS=10
+export SEEDS=0
+export EPOCHS=1
+
+bash scripts/run_fewshot_all.sh
+```
+
+Run the full paper setting and save the terminal log with `nohup`:
+
+```bash
+cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Generation/Ph
+
+export CUDA_VISIBLE_DEVICES=0
+export DATA_ROOT=dataset/modelscope/extracted/classification_dataset
+export CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth
+export RUN_NAME=downstream_fewshot_paper
+
+bash scripts/run_fewshot_all_nohup.sh
+```
+
+The summary CSV is saved to:
+
+```text
+runs/downstream_fewshot_paper/results.csv
+```
+
+Each single run also writes a JSONL log under:
+
+```text
+runs/downstream_fewshot_paper/<dataset>/<protocol>/<shot>shot/seed<seed>/log.jsonl
+```
