@@ -242,26 +242,54 @@ bash scripts/check_code_and_data.sh
 
 ## 11. 2xH100 pretraining
 
-Run pretraining on two H100 GPUs:
+Run pretraining on two H100 GPUs and save a terminal log with `nohup`:
 
 ```bash
 cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Generation/Ph
 
 export CUDA_VISIBLE_DEVICES=0,1
 export DATA_PATH=dataset/modelscope/extracted/Pretraining_dataset
-export OUTPUT_DIR=runs/pretrain_2xh100
+export RUN_NAME=pretrain_2xh100_lfst1_blr2p5e-4
+export OUTPUT_DIR=runs/$RUN_NAME
 export BATCH_SIZE=512
+export BLR=2.5e-4
+export GRAD_LOSS_WEIGHT=1.0
+export LFST_LOSS_WEIGHT=1.0
 
-bash scripts/pretrain_2xh100.sh
+bash scripts/run_pretrain_2xh100_nohup.sh
 ```
 
-If CUDA OOM appears, reduce the per-GPU batch size and rerun:
+If you have an original MAE/ViT checkpoint and want to initialize the encoder
+front-end before training, set `INIT_CKPT`. The loader keeps encoder/front
+weights (`patch_embed`, `cls_token`, `pos_embed`, `blocks`, `norm`) and skips
+new task-specific modules and mismatched heads:
 
 ```bash
+export INIT_CKPT=/path/to/original_mae_pretrain.pth
+export INIT_CKPT_SCOPE=encoder
+bash scripts/run_pretrain_2xh100_nohup.sh
+```
+
+If CUDA OOM appears, reduce the per-GPU batch size and rerun with a new
+`RUN_NAME`:
+
+```bash
+export RUN_NAME=pretrain_2xh100_lfst1_blr2p5e-4_bs256
 export BATCH_SIZE=256
-bash scripts/pretrain_2xh100.sh
+bash scripts/run_pretrain_2xh100_nohup.sh
 ```
 
 The H100 script uses `torchrun --standalone --nproc_per_node=2`, BF16 mixed
 precision, TF32 matrix math enabled in `Pretraining/main_pretrain.py`, and DDP
 with one process per GPU.
+
+The JSON training log now records the total loss and separate components:
+
+```text
+train_loss
+train_loss_grad
+train_loss_lfst
+train_loss_grad_weighted
+train_loss_lfst_weighted
+train_lr
+```

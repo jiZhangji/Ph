@@ -14,8 +14,12 @@ NUM_WORKERS="${NUM_WORKERS:-16}"
 EPOCHS="${EPOCHS:-300}"
 SAVE_FREQ="${SAVE_FREQ:-50}"
 AMP_DTYPE="${AMP_DTYPE:-bf16}"
-BLR="${BLR:-1e-3}"
+BLR="${BLR:-2.5e-4}"
 WARMUP_EPOCHS="${WARMUP_EPOCHS:-20}"
+GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
+LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
+INIT_CKPT="${INIT_CKPT:-}"
+INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
 
 torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --model "$MODEL" \
@@ -29,10 +33,13 @@ torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --epochs "$EPOCHS" \
   --blr "$BLR" \
   --warmup_epochs "$WARMUP_EPOCHS" \
+  --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
+  --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
   --num_workers "$NUM_WORKERS" \
   --pin_mem \
   --window_size 7 \
   --num_window 4 \
   --mask_ratio 0.8 \
   --save_freq "$SAVE_FREQ" \
-  --init_ckpt ''
+  --init_ckpt "$INIT_CKPT" \
+  --init_ckpt_scope "$INIT_CKPT_SCOPE"

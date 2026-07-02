@@ -538,7 +538,7 @@ class MaskedAutoencoderViT(nn.Module):
                  embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False,
-                 lfst_cutoff=30, lfst_loss_weight=0.3,
+                 lfst_cutoff=30, grad_loss_weight=1.0, lfst_loss_weight=0.3,
                  sasgt_scales=(0.8, 1.6, 3.2, 6.4), sasgt_temperature=1.0,
                  sasgt_gamma=1.0, sasgt_reliability_window=7):
         super().__init__()
@@ -593,6 +593,7 @@ class MaskedAutoencoderViT(nn.Module):
         )
 
         # LFST 损失权重（你可以暴露为超参）
+        self.grad_loss_weight = float(grad_loss_weight)
         self.lfst_loss_weight = float(lfst_loss_weight)
         # --------------------------------------------------------------------------  
         # Fixed spatial target generator (no trainable parameters).
@@ -936,10 +937,18 @@ class MaskedAutoencoderViT(nn.Module):
         loss_lfst = self.forward_loss_lfst(imgs, pred_lfst, mask_indices, num_window, ids_restore)
 
         # 总损失
-        loss = loss_grad + self.lfst_loss_weight * loss_lfst
+        loss_grad_weighted = self.grad_loss_weight * loss_grad
+        loss_lfst_weighted = self.lfst_loss_weight * loss_lfst
+        loss = loss_grad_weighted + loss_lfst_weighted
+        loss_items = {
+            "loss_grad": loss_grad,
+            "loss_lfst": loss_lfst,
+            "loss_grad_weighted": loss_grad_weighted,
+            "loss_lfst_weighted": loss_lfst_weighted,
+        }
 
         # 返回两个预测，便于可视化/调试
-        return loss, (pred_grad_like, pred_lfst), mask_indices
+        return loss, (pred_grad_like, pred_lfst), loss_items
 
 
 def mae_vit_base_patch16_dec512d8b(**kwargs):

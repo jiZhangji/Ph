@@ -49,17 +49,30 @@ def train_one_epoch(model: torch.nn.Module,
         amp_enabled = device.type == 'cuda' and args.amp_dtype != 'none'
         amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
-            loss, _, _ = model(
+            loss, _, loss_items = model(
                 samples, window_size=args.window_size,
                 num_window=args.num_window, mask_ratio=args.mask_ratio
             )
             loss = torch.mean(loss)
+            loss_items = {
+                key: torch.mean(value)
+                for key, value in loss_items.items()
+            }
         loss_value = loss.item()
+        loss_item_values = {
+            key: value.item()
+            for key, value in loss_items.items()
+        }
 
         if not math.isfinite(loss_value):
             print(samples)
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
+        for key, value in loss_item_values.items():
+            if not math.isfinite(value):
+                print(samples)
+                print("{} is {}, stopping training".format(key, value))
+                sys.exit(1)
 
         loss = loss/ accum_iter
         loss_scaler(loss, optimizer, parameters=model.parameters(),
@@ -69,17 +82,25 @@ def train_one_epoch(model: torch.nn.Module,
             optimizer.zero_grad()
 
         metric_logger.update(loss=loss_value)
+        for key, value in loss_item_values.items():
+            metric_logger.update(**{key: value})
 
         lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=lr)
 
         loss_value_reduce = misc.all_reduce_mean(loss_value)
+        loss_item_values_reduce = {
+            key: misc.all_reduce_mean(value)
+            for key, value in loss_item_values.items()
+        }
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
+            for key, value in loss_item_values_reduce.items():
+                log_writer.add_scalar(f'train_{key}', value, epoch_1000x)
             log_writer.add_scalar('lr', lr, epoch_1000x)
 
 

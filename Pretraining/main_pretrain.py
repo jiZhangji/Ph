@@ -26,10 +26,94 @@ import timm.optim.optim_factory as optim_factory
 
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.pos_embed import interpolate_pos_embed
 
 import models_lomar
 
 from engine_pretrain import train_one_epoch
+
+
+def _checkpoint_state_dict(checkpoint):
+    if isinstance(checkpoint, dict):
+        for key in ("model", "state_dict", "module"):
+            value = checkpoint.get(key)
+            if isinstance(value, dict):
+                return value
+    return checkpoint
+
+
+def _strip_checkpoint_prefixes(state_dict):
+    prefixes = ("module.", "model.", "encoder.")
+    stripped = {}
+    for key, value in state_dict.items():
+        new_key = key
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if new_key.startswith(prefix):
+                    new_key = new_key[len(prefix):]
+                    changed = True
+        stripped[new_key] = value
+    return stripped
+
+
+def _adapt_patch_embed_to_single_channel(state_dict, model_state):
+    key = "patch_embed.proj.weight"
+    if key not in state_dict or key not in model_state:
+        return
+    source = state_dict[key]
+    target = model_state[key]
+    if source.shape == target.shape:
+        return
+    if source.ndim == 4 and target.ndim == 4 and source.shape[1] == 3 and target.shape[1] == 1:
+        state_dict[key] = source.mean(dim=1, keepdim=True)
+        print("Adapted patch_embed.proj.weight from 3-channel RGB to 1-channel SAR")
+
+
+def _filter_initial_state_dict(state_dict, model, scope):
+    model_state = model.state_dict()
+    _adapt_patch_embed_to_single_channel(state_dict, model_state)
+    interpolate_pos_embed(model, state_dict)
+
+    encoder_prefixes = ("patch_embed.", "cls_token", "pos_embed", "blocks.", "norm.")
+    filtered = {}
+    skipped = []
+    for key, value in state_dict.items():
+        if scope == "encoder" and not key.startswith(encoder_prefixes):
+            skipped.append((key, "outside encoder scope"))
+            continue
+        if key not in model_state:
+            skipped.append((key, "not in current model"))
+            continue
+        if model_state[key].shape != value.shape:
+            skipped.append((key, f"shape {tuple(value.shape)} != {tuple(model_state[key].shape)}"))
+            continue
+        filtered[key] = value
+    return filtered, skipped
+
+
+def load_initial_checkpoint(model, ckpt_path, scope="encoder"):
+    if not ckpt_path:
+        return
+    if not os.path.isfile(ckpt_path):
+        raise FileNotFoundError(
+            f"Initialization checkpoint not found: {ckpt_path}. "
+            "Pass --init_ckpt '' to train from scratch."
+        )
+    checkpoint = torch.load(ckpt_path, map_location="cpu")
+    state_dict = _strip_checkpoint_prefixes(_checkpoint_state_dict(checkpoint))
+    filtered, skipped = _filter_initial_state_dict(state_dict, model, scope)
+    if not filtered:
+        raise RuntimeError(f"No compatible parameters found in init checkpoint: {ckpt_path}")
+    msg = model.load_state_dict(filtered, strict=False)
+    print(f"Loaded init checkpoint: {ckpt_path}")
+    print(f"Init scope: {scope}; loaded tensors: {len(filtered)}; skipped tensors: {len(skipped)}")
+    if skipped:
+        print("First skipped tensors:")
+        for key, reason in skipped[:20]:
+            print(f"  {key}: {reason}")
+    print(msg)
 
 
 def get_args_parser():
@@ -86,6 +170,8 @@ def get_args_parser():
                         help='resume from checkpoint')
     parser.add_argument('--init_ckpt', default='',
                         help='optional initialization checkpoint; leave empty to train from scratch')
+    parser.add_argument('--init_ckpt_scope', default='encoder', choices=('encoder', 'all'),
+                        help='load only encoder/front weights from init_ckpt, or all shape-compatible weights')
     parser.add_argument('--max_train_steps', default=0, type=int,
                         help='limit batches per epoch for smoke tests; 0 means use the full epoch')
     parser.add_argument('--amp_dtype', default='bf16', choices=('bf16', 'fp16', 'none'),
@@ -108,6 +194,7 @@ def get_args_parser():
     parser.add_argument('--mask_ratio', default=0.8, type=float,
                         help='Masking ratio (percentage of removed patches).')
     parser.add_argument('--lfst_cutoff', default=30, type=int)
+    parser.add_argument('--grad_loss_weight', default=1.0, type=float)
     parser.add_argument('--lfst_loss_weight', default=0.3, type=float)
     parser.add_argument('--sasgt_scales', default='0.8,1.6,3.2,6.4', type=str)
     parser.add_argument('--sasgt_temperature', default=1.0, type=float)
@@ -206,6 +293,7 @@ def main(args):
     model = models_lomar.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss,
         lfst_cutoff=args.lfst_cutoff,
+        grad_loss_weight=args.grad_loss_weight,
         lfst_loss_weight=args.lfst_loss_weight,
         sasgt_scales=sasgt_scales,
         sasgt_temperature=args.sasgt_temperature,
@@ -213,15 +301,7 @@ def main(args):
         sasgt_reliability_window=args.sasgt_reliability_window,
     )
 
-    if args.init_ckpt:
-        if not os.path.isfile(args.init_ckpt):
-            raise FileNotFoundError(
-                f"Initialization checkpoint not found: {args.init_ckpt}. "
-                "Pass --init_ckpt '' to train from scratch."
-            )
-        checkpoint = torch.load(args.init_ckpt, map_location='cpu')
-        msg = model.load_state_dict(checkpoint, strict=False)
-        print(msg)
+    load_initial_checkpoint(model, args.init_ckpt, scope=args.init_ckpt_scope)
 
 
     model.to(device)
