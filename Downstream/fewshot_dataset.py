@@ -25,26 +25,98 @@ def normalize_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
-def resolve_dataset_dir(data_root: Path, dataset: str) -> Path:
+def dataset_name_matches_exact(path: Path, normalized_aliases: set[str]) -> bool:
+    normalized = normalize_name(path.name)
+    return normalized in normalized_aliases
+
+
+def dataset_name_contains(path: Path, normalized_aliases: set[str]) -> bool:
+    normalized = normalize_name(path.name)
+    return any(alias in normalized for alias in normalized_aliases)
+
+
+def shot_name_matches(path: Path, shots: int) -> bool:
+    normalized = normalize_name(path.name)
+    patterns = {
+        normalize_name(f"{shots}shot"),
+        normalize_name(f"{shots}_shot"),
+        normalize_name(f"{shots}-shot"),
+        normalize_name(f"shot{shots}"),
+        normalize_name(f"k{shots}"),
+    }
+    return any(pattern in normalized for pattern in patterns)
+
+
+def resolve_dataset_dir(data_root: Path, dataset: str, shots: int | None = None) -> Path:
     data_root = Path(data_root)
     if not data_root.is_dir():
         raise FileNotFoundError(f"Downstream data root does not exist: {data_root}")
 
     aliases = DATASET_ALIASES.get(dataset, (dataset,))
     normalized_aliases = {normalize_name(alias) for alias in aliases}
+    if dataset_name_matches_exact(data_root, normalized_aliases):
+        return data_root
+
     direct = data_root / dataset
     if direct.is_dir():
         return direct
 
     for path in data_root.iterdir():
-        if path.is_dir() and normalize_name(path.name) in normalized_aliases:
+        if path.is_dir() and dataset_name_matches_exact(path, normalized_aliases):
             return path
 
-    available = ", ".join(sorted(path.name for path in data_root.iterdir() if path.is_dir()))
+    exact_candidates = [
+        path for path in data_root.rglob("*")
+        if path.is_dir() and dataset_name_matches_exact(path, normalized_aliases)
+    ]
+    if exact_candidates:
+        return sorted(exact_candidates, key=lambda item: len(item.parts))[0]
+
+    contains_candidates = [
+        path for path in data_root.rglob("*")
+        if path.is_dir() and dataset_name_contains(path, normalized_aliases)
+    ]
+    if contains_candidates:
+        if shots is not None:
+            shot_candidates = [path for path in contains_candidates if shot_name_matches(path, shots)]
+            if shot_candidates:
+                return sorted(shot_candidates, key=lambda item: len(item.parts))[0]
+        return sorted(contains_candidates, key=lambda item: len(item.parts))[0]
+
+    available_dirs = sorted(str(path.relative_to(data_root)) for path in data_root.rglob("*") if path.is_dir())
+    available = ", ".join(available_dirs[:50])
+    if len(available_dirs) > 50:
+        available += ", ..."
     raise FileNotFoundError(
         f"Could not find dataset '{dataset}' under {data_root}. "
         f"Available directories: {available}"
     )
+
+
+def find_shot_dir(dataset_dir: Path, shots: int) -> Path | None:
+    shot_patterns = {
+        normalize_name(f"{shots}shot"),
+        normalize_name(f"{shots}_shot"),
+        normalize_name(f"{shots}-shot"),
+        normalize_name(f"shot{shots}"),
+        normalize_name(f"k{shots}"),
+    }
+    for child in dataset_dir.iterdir():
+        if child.is_dir() and normalize_name(child.name) in shot_patterns:
+            return child
+    return None
+
+
+def find_seed_dir(dataset_dir: Path, seed: int) -> Path | None:
+    seed_patterns = {
+        normalize_name(f"seed{seed}"),
+        normalize_name(f"split{seed}"),
+        normalize_name(f"fold{seed}"),
+    }
+    for child in dataset_dir.iterdir():
+        if child.is_dir() and normalize_name(child.name) in seed_patterns:
+            return child
+    return None
 
 
 def find_split_dir(dataset_dir: Path, names: tuple[str, ...]) -> Path | None:
@@ -70,6 +142,14 @@ def collect_class_images(root: Path) -> dict[str, list[Path]]:
 
 
 def build_fewshot_split(dataset_dir: Path, shots: int, seed: int):
+    shot_dir = find_shot_dir(dataset_dir, shots)
+    if shot_dir is not None:
+        dataset_dir = shot_dir
+
+    seed_dir = find_seed_dir(dataset_dir, seed)
+    if seed_dir is not None:
+        dataset_dir = seed_dir
+
     train_dir = find_split_dir(dataset_dir, TRAIN_NAMES)
     test_dir = find_split_dir(dataset_dir, TEST_NAMES)
 

@@ -14,7 +14,8 @@ export RUN_NAME
   echo "RUN_NAME=$RUN_NAME"
   echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}"
   echo "DATA_ROOT=${DATA_ROOT:-dataset/modelscope/extracted/classification_dataset}"
-  echo "CHECKPOINT=${CHECKPOINT:-runs/pretrain_2xh100/checkpoint-299.pth}"
+  echo "CHECKPOINT=${CHECKPOINT:-latest}"
+  echo "CHECKPOINT_ROOT=${CHECKPOINT_ROOT:-runs/pretrain_2xh100}"
   echo "OUTPUT_DIR=${OUTPUT_DIR:-runs/${RUN_NAME}}"
   echo "DATASETS=${DATASETS:-mstar fusar_ship sar_acd}"
   echo "PROTOCOLS=${PROTOCOLS:-finetune linear}"
@@ -24,6 +25,7 @@ export RUN_NAME
   echo "BATCH_SIZE=${BATCH_SIZE:-50}"
   echo "LR=${LR:-1e-3}"
   echo "WEIGHT_DECAY=${WEIGHT_DECAY:-5e-4}"
+  echo "SUMMARY_METRIC=${SUMMARY_METRIC:-final_acc}"
 } > "$LOG_FILE"
 
 nohup bash scripts/run_fewshot_all.sh >> "$LOG_FILE" 2>&1 &

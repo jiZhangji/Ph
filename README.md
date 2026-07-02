@@ -310,7 +310,8 @@ cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Ge
 
 export CUDA_VISIBLE_DEVICES=0
 export DATA_ROOT=dataset/modelscope/extracted/classification_dataset
-export CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth
+export CHECKPOINT=latest
+export CHECKPOINT_ROOT=runs/pretrain_2xh100
 export RUN_NAME=downstream_smoke
 export DATASETS=mstar
 export PROTOCOLS=linear
@@ -328,7 +329,8 @@ cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Ge
 
 export CUDA_VISIBLE_DEVICES=0
 export DATA_ROOT=dataset/modelscope/extracted/classification_dataset
-export CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth
+export CHECKPOINT=latest
+export CHECKPOINT_ROOT=runs/pretrain_2xh100
 export RUN_NAME=downstream_fewshot_paper
 
 bash scripts/run_fewshot_all_nohup.sh
@@ -344,4 +346,22 @@ Each single run also writes a JSONL log under:
 
 ```text
 runs/downstream_fewshot_paper/<dataset>/<protocol>/<shot>shot/seed<seed>/log.jsonl
+```
+
+`CHECKPOINT=latest` selects the last saved pretraining checkpoint under
+`CHECKPOINT_ROOT`. You can also pass a concrete path, for example
+`CHECKPOINT=runs/pretrain_2xh100/checkpoint-299.pth`.
+
+`CHECKPOINT=best-loss` selects the saved checkpoint with the lowest
+pretraining `train_loss` recorded in `CHECKPOINT_ROOT/log.txt`. This is useful
+for inspection, but it is not a true downstream best checkpoint because
+self-supervised pretraining has no classification validation set.
+
+The CSV records both `final_acc` and `best_acc`. The default summary metric is
+`final_acc` to avoid selecting epochs on the test set. To inspect the best point
+of each downstream test curve, set:
+
+```bash
+export SUMMARY_METRIC=best_acc
+bash scripts/run_fewshot_all.sh
 ```

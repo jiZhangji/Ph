@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import random
+import re
 import sys
 import time
 from collections import defaultdict
@@ -49,6 +50,100 @@ FEATURE_PARAM_PREFIXES = (
     "img_SFAFM_process.",
 )
 
+LATEST_CHECKPOINT_ALIASES = {"latest", "auto", "final"}
+BEST_LOSS_CHECKPOINT_ALIASES = {"best", "best-loss", "best_loss", "best-train-loss", "best_train_loss"}
+
+
+def checkpoint_epoch(path: Path) -> int | None:
+    match = re.match(r"checkpoint-(\d+)\.pth$", path.name)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def list_epoch_checkpoints(checkpoint_root: Path) -> dict[int, Path]:
+    checkpoint_root = Path(checkpoint_root)
+    if not checkpoint_root.is_dir():
+        return {}
+    checkpoints: dict[int, Path] = {}
+    for path in checkpoint_root.glob("checkpoint-*.pth"):
+        epoch = checkpoint_epoch(path)
+        if epoch is not None:
+            checkpoints[epoch] = path
+    return checkpoints
+
+
+def read_pretrain_losses(checkpoint_root: Path) -> dict[int, float]:
+    log_path = Path(checkpoint_root) / "log.txt"
+    if not log_path.is_file():
+        return {}
+
+    losses: dict[int, float] = {}
+    with log_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            epoch = record.get("epoch")
+            loss = record.get("train_loss")
+            if isinstance(epoch, int) and isinstance(loss, (float, int)):
+                losses[epoch] = float(loss)
+    return losses
+
+
+def resolve_checkpoint(checkpoint: str | None, checkpoint_root: Path, allow_random_init: bool) -> Path | None:
+    if checkpoint is None or checkpoint.strip() == "":
+        if allow_random_init:
+            return None
+        raise ValueError("A pretrained checkpoint is required unless --allow_random_init is set.")
+
+    checkpoint_value = checkpoint.strip()
+    normalized = checkpoint_value.lower()
+    if normalized in {"none", "random"}:
+        if allow_random_init:
+            return None
+        raise ValueError("Random initialization requested, but --allow_random_init is not set.")
+
+    checkpoint_path = Path(checkpoint_value)
+    if checkpoint_path.is_file():
+        return checkpoint_path
+
+    checkpoints = list_epoch_checkpoints(checkpoint_root)
+    if normalized in LATEST_CHECKPOINT_ALIASES:
+        if not checkpoints:
+            raise FileNotFoundError(f"No checkpoint-*.pth files found under: {checkpoint_root}")
+        latest_epoch = max(checkpoints)
+        return checkpoints[latest_epoch]
+
+    if normalized in BEST_LOSS_CHECKPOINT_ALIASES:
+        explicit_best = Path(checkpoint_root) / "checkpoint-best.pth"
+        if explicit_best.is_file():
+            return explicit_best
+
+        losses = read_pretrain_losses(checkpoint_root)
+        candidates = [
+            (losses[epoch], epoch, path)
+            for epoch, path in checkpoints.items()
+            if epoch in losses
+        ]
+        if not candidates:
+            raise FileNotFoundError(
+                f"Could not resolve best-loss checkpoint. Need saved checkpoint-*.pth files "
+                f"and train_loss entries in {Path(checkpoint_root) / 'log.txt'}."
+            )
+        loss, epoch, path = min(candidates, key=lambda item: (item[0], item[1]))
+        print(
+            f"Selected best-loss checkpoint from saved epochs: {path} "
+            f"(epoch={epoch}, train_loss={loss:.6f})."
+        )
+        return path
+
+    raise FileNotFoundError(
+        f"Checkpoint does not exist: {checkpoint_path}. "
+        f"Use a path, latest, or best-loss."
+    )
+
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -89,14 +184,9 @@ def load_backbone(args):
         grad_loss_weight=1.0,
         lfst_loss_weight=1.0,
     )
-    if not args.checkpoint:
-        if not args.allow_random_init:
-            raise ValueError("A pretrained checkpoint is required unless --allow_random_init is set.")
+    if args.checkpoint is None:
         print("WARNING: no checkpoint passed; downstream model starts from random weights.")
         return backbone
-
-    if not args.checkpoint.is_file():
-        raise FileNotFoundError(f"Checkpoint does not exist: {args.checkpoint}")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     state_dict = strip_prefixes(checkpoint_state_dict(checkpoint))
@@ -194,7 +284,7 @@ def evaluate(model, loader, criterion, device):
 
 def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
     set_seed(seed)
-    dataset_dir = resolve_dataset_dir(args.data_root, dataset_name)
+    dataset_dir = resolve_dataset_dir(args.data_root, dataset_name, shots=shots)
     train_samples, test_samples, classes = build_fewshot_split(dataset_dir, shots, seed)
     train_transform, test_transform = build_transforms(args.input_size)
 
@@ -244,6 +334,8 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
 
     best_acc = 0.0
     best_epoch = -1
+    final_acc = 0.0
+    final_loss = 0.0
     start_time = time.time()
     with log_path.open("w", encoding="utf-8") as handle:
         for epoch in range(args.epochs):
@@ -254,6 +346,8 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
             if test_acc > best_acc:
                 best_acc = test_acc
                 best_epoch = epoch
+            final_acc = test_acc
+            final_loss = test_loss
             record = {
                 "dataset": dataset_name,
                 "protocol": protocol,
@@ -279,6 +373,8 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
         "num_classes": len(classes),
         "train_samples": len(train_samples),
         "test_samples": len(test_samples),
+        "final_acc": final_acc,
+        "final_loss": final_loss,
         "best_acc": best_acc,
         "best_epoch": best_epoch,
         "elapsed_sec": time.time() - start_time,
@@ -288,7 +384,8 @@ def run_single(args, dataset_name: str, shots: int, seed: int, protocol: str):
 def parse_args():
     parser = argparse.ArgumentParser(description="Few-shot downstream SAR classification.")
     parser.add_argument("--data_root", type=Path, default=Path("dataset/modelscope/extracted/classification_dataset"))
-    parser.add_argument("--checkpoint", type=Path, default=Path("runs/pretrain_2xh100/checkpoint-299.pth"))
+    parser.add_argument("--checkpoint", default="latest", help="Checkpoint path, latest, or best-loss.")
+    parser.add_argument("--checkpoint_root", type=Path, default=Path("runs/pretrain_2xh100"))
     parser.add_argument("--output_dir", type=Path, default=Path("runs/downstream_fewshot"))
     parser.add_argument("--datasets", nargs="+", default=["mstar", "fusar_ship", "sar_acd"])
     parser.add_argument("--shots", nargs="+", type=int, default=[10, 20, 40])
@@ -303,6 +400,7 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--lfst_cutoff", type=int, default=30)
+    parser.add_argument("--summary_metric", choices=("final_acc", "best_acc"), default="final_acc")
     parser.add_argument("--allow_random_init", action="store_true")
     parser.add_argument("--no_pin_mem", action="store_false", dest="pin_mem")
     parser.add_argument("--no_sfafm_features", action="store_true")
@@ -312,6 +410,9 @@ def parse_args():
 
 def main():
     args = parse_args()
+    args.checkpoint = resolve_checkpoint(args.checkpoint, args.checkpoint_root, args.allow_random_init)
+    if args.checkpoint is not None:
+        print(f"Using checkpoint: {args.checkpoint}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     config_path = args.output_dir / "config.json"
     with config_path.open("w", encoding="utf-8") as handle:
@@ -335,12 +436,12 @@ def main():
     grouped = defaultdict(list)
     for result in all_results:
         key = (result["dataset"], result["protocol"], result["shots"])
-        grouped[key].append(result["best_acc"])
+        grouped[key].append(result[args.summary_metric])
     print("\nFew-shot summary:")
     for (dataset_name, protocol, shots), values in sorted(grouped.items()):
         mean = float(np.mean(values))
         std = float(np.std(values))
-        print(f"{dataset_name} {protocol} {shots}-shot: {mean:.2f} +/- {std:.2f}")
+        print(f"{dataset_name} {protocol} {shots}-shot {args.summary_metric}: {mean:.2f} +/- {std:.2f}")
 
 
 if __name__ == "__main__":
