@@ -77,9 +77,9 @@ class SASGTTarget(nn.Module):
         if x.ndim != 4 or x.shape[1] != 1:
             raise ValueError("SASGT expects input shaped [B, 1, H, W]")
 
-        # ToTensor produces non-negative intensity values. Clamp also protects
-        # mixed-precision execution and custom datasets with tiny negative noise.
-        log_x = torch.log(torch.clamp(x.float(), min=0.0) + self.eps)
+        # log1p keeps the speckle-compression prior while avoiding huge
+        # artificial gradients around zero-valued SAR background pixels.
+        log_x = torch.log1p(torch.clamp(x.float(), min=0.0))
         magnitudes = []
         scores = []
         pool_pad = self.reliability_window // 2
@@ -483,6 +483,9 @@ class SFAFM(nn.Module): # 类名保持 SFAFM 以兼容你外层调用的代码�
         # ================== Step 4 ==================
         # 扩展层 Expand(·)
         self.Expand = nn.Conv2d(channels, embed_dim, kernel_size=1)
+        nn.init.zeros_(self.Expand.weight)
+        if self.Expand.bias is not None:
+            nn.init.zeros_(self.Expand.bias)
         
         
     def forward(self, Xi):  
@@ -539,6 +542,7 @@ class MaskedAutoencoderViT(nn.Module):
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False,
                  lfst_cutoff=30, grad_loss_weight=1.0, lfst_loss_weight=0.3,
+                 target_norm="patch",
                  sasgt_scales=(0.8, 1.6, 3.2, 6.4), sasgt_temperature=1.0,
                  sasgt_gamma=1.0, sasgt_reliability_window=7):
         super().__init__()
@@ -595,6 +599,9 @@ class MaskedAutoencoderViT(nn.Module):
         # LFST 损失权重（你可以暴露为超参）
         self.grad_loss_weight = float(grad_loss_weight)
         self.lfst_loss_weight = float(lfst_loss_weight)
+        if target_norm not in ("none", "patch", "image"):
+            raise ValueError("target_norm must be one of: none, patch, image")
+        self.target_norm = target_norm
         # --------------------------------------------------------------------------  
         # Fixed spatial target generator (no trainable parameters).
         self.sasgt_builder = SASGTTarget(
@@ -716,6 +723,26 @@ class MaskedAutoencoderViT(nn.Module):
         x = torch.einsum('nhwpqc->nchpwq', x)
         imgs = x.reshape(shape=(x.shape[0], C, h * p, h * p))
         return imgs
+
+    def normalize_target(self, target):
+        if self.target_norm == "none":
+            return target
+        if self.target_norm == "patch":
+            mean = target.mean(dim=-1, keepdim=True)
+            var = target.var(dim=-1, keepdim=True, unbiased=False)
+        else:
+            mean = target.mean(dim=(1, 2), keepdim=True)
+            var = target.var(dim=(1, 2), keepdim=True, unbiased=False)
+        return (target - mean) / torch.sqrt(var + 1.0e-6)
+
+    @staticmethod
+    def prediction_stats(prefix, pred, target):
+        return {
+            f"{prefix}_pred_mean": pred.detach().mean(),
+            f"{prefix}_pred_std": pred.detach().std(unbiased=False),
+            f"{prefix}_target_mean": target.detach().mean(),
+            f"{prefix}_target_std": target.detach().std(unbiased=False),
+        }
 
     def random_masking(self, x, mask_ratio):
         """
@@ -917,6 +944,7 @@ class MaskedAutoencoderViT(nn.Module):
         N, P, H = target_lfst.shape                   # P=L, H=D_lfst
         target_lfst = target_lfst.unsqueeze(0).repeat(num_window, 1, 1, 1).view(-1, P, H)
         target_lfst = torch.gather(target_lfst, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, H))
+        target_lfst = self.normalize_target(target_lfst)
 
         # 使用 MSE 损失 (L2) 预测空间域平滑后的像素
         loss = (pred_lfst - target_lfst) ** 2
@@ -924,7 +952,8 @@ class MaskedAutoencoderViT(nn.Module):
 
         # 只在被 mask 的 patch 上求平均
         loss = (loss * mask_indices).sum() / (mask_indices.sum() + 1e-6)
-        return loss
+        stats = self.prediction_stats("lfst", pred_lfst, target_lfst)
+        return loss, stats
 
 
     def forward_loss(self, imgs, pred, mask_indices, num_window, ids_restore):
@@ -938,12 +967,14 @@ class MaskedAutoencoderViT(nn.Module):
         N, P_len, H_dim = target.shape
         target = target.unsqueeze(0).repeat(num_window, 1, 1, 1).view(-1, P_len, H_dim)
         target = torch.gather(target, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, H_dim))
+        target = self.normalize_target(target)
 
         # 使用 MSE Loss
         loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  
         loss = (loss * mask_indices).sum() / (mask_indices.sum() + 1e-6)  
-        return loss
+        stats = self.prediction_stats("grad", pred, target)
+        return loss, stats
 
     def forward(self, imgs, window_size=7, num_window=4, mask_ratio=0.8):
         # 共享解码器 + 双 head 的输出
@@ -952,10 +983,10 @@ class MaskedAutoencoderViT(nn.Module):
         )
 
         # SASGT spatial-target loss.
-        loss_grad = self.forward_loss(imgs, pred_grad_like, mask_indices, num_window, ids_restore)
+        loss_grad, grad_stats = self.forward_loss(imgs, pred_grad_like, mask_indices, num_window, ids_restore)
         
         # 低频结构损失 (LFST)
-        loss_lfst = self.forward_loss_lfst(imgs, pred_lfst, mask_indices, num_window, ids_restore)
+        loss_lfst, lfst_stats = self.forward_loss_lfst(imgs, pred_lfst, mask_indices, num_window, ids_restore)
 
         # 总损失
         loss_grad_weighted = self.grad_loss_weight * loss_grad
@@ -967,6 +998,8 @@ class MaskedAutoencoderViT(nn.Module):
             "loss_grad_weighted": loss_grad_weighted,
             "loss_lfst_weighted": loss_lfst_weighted,
         }
+        loss_items.update(grad_stats)
+        loss_items.update(lfst_stats)
 
         # 返回两个预测，便于可视化/调试
         return loss, (pred_grad_like, pred_lfst), loss_items

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BATCH_SIZE="${BATCH_SIZE:-512}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
 DATA_PATH="${DATA_PATH:-dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-runs/pretrain_2xh100}"
 GPUS="${GPUS:-2}"
@@ -14,10 +14,11 @@ NUM_WORKERS="${NUM_WORKERS:-16}"
 EPOCHS="${EPOCHS:-300}"
 SAVE_FREQ="${SAVE_FREQ:-50}"
 AMP_DTYPE="${AMP_DTYPE:-bf16}"
-BLR="${BLR:-2.5e-4}"
+BLR="${BLR:-1e-4}"
 WARMUP_EPOCHS="${WARMUP_EPOCHS:-20}"
 GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
 LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
+TARGET_NORM="${TARGET_NORM:-patch}"
 INIT_CKPT="${INIT_CKPT:-}"
 INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
 
@@ -35,6 +36,7 @@ torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --warmup_epochs "$WARMUP_EPOCHS" \
   --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
   --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
+  --target_norm "$TARGET_NORM" \
   --num_workers "$NUM_WORKERS" \
   --pin_mem \
   --window_size 7 \

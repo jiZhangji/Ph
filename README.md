@@ -249,12 +249,13 @@ cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Ge
 
 export CUDA_VISIBLE_DEVICES=0,1
 export DATA_PATH=dataset/modelscope/extracted/Pretraining_dataset
-export RUN_NAME=pretrain_2xh100_lfst1_blr2p5e-4
+export RUN_NAME=pretrain_2xh100_stable_targets
 export OUTPUT_DIR=runs/$RUN_NAME
-export BATCH_SIZE=512
-export BLR=2.5e-4
+export BATCH_SIZE=256
+export BLR=1e-4
 export GRAD_LOSS_WEIGHT=1.0
 export LFST_LOSS_WEIGHT=1.0
+export TARGET_NORM=patch
 
 bash scripts/run_pretrain_2xh100_nohup.sh
 ```
@@ -270,6 +271,17 @@ python scripts/download_mae_pretrained_weights.py --model base
 export INIT_CKPT=weights/mae_pretrain_vit_base.pth
 export INIT_CKPT_SCOPE=encoder
 bash scripts/run_pretrain_2xh100_nohup.sh
+```
+
+For a quick check before a full run, limit training to a few epochs and confirm
+that `train_loss`, `train_loss_grad`, and `train_loss_lfst` decrease:
+
+```bash
+export RUN_NAME=pretrain_2xh100_stable_debug
+export EPOCHS=5
+export SAVE_FREQ=1
+bash scripts/run_pretrain_2xh100_nohup.sh
+tail -f logs/$RUN_NAME.log
 ```
 
 If CUDA OOM appears, reduce the per-GPU batch size and rerun with a new
