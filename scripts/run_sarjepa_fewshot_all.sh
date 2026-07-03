@@ -39,9 +39,22 @@ PY
 
   local zip_path="$ROOT/few_shot_classification/Dassl.pytorch.zip"
   local dassl_dir="$ROOT/few_shot_classification/Dassl.pytorch"
+  if [[ -d "$dassl_dir/dassl" ]]; then
+    export PYTHONPATH="$dassl_dir:${PYTHONPATH:-}"
+    return
+  fi
+
   if [[ -f "$zip_path" ]]; then
     unzip -q -o "$zip_path" -d "$ROOT/few_shot_classification"
-    pip install -e "$dassl_dir"
+    export PYTHONPATH="$dassl_dir:${PYTHONPATH:-}"
+    if pip install -e "$dassl_dir" --no-build-isolation --no-deps; then
+      return
+    fi
+
+    echo "Editable Dassl install failed; falling back to PYTHONPATH."
+    python - <<'PY'
+import dassl
+PY
     return
   fi
 
