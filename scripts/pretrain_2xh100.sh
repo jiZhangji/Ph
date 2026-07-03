@@ -16,6 +16,7 @@ SAVE_FREQ="${SAVE_FREQ:-50}"
 AMP_DTYPE="${AMP_DTYPE:-bf16}"
 BLR="${BLR:-5e-5}"
 WARMUP_EPOCHS="${WARMUP_EPOCHS:-20}"
+LR="${LR:-}"
 GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
 LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
 TARGET_NORM="${TARGET_NORM:-patch}"
@@ -33,6 +34,7 @@ torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --accum_iter "$ACCUM_ITER" \
   --epochs "$EPOCHS" \
   --blr "$BLR" \
+  ${LR:+--lr "$LR"} \
   --warmup_epochs "$WARMUP_EPOCHS" \
   --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
   --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
