@@ -96,7 +96,11 @@ link_dataset() {
   for alias in "${aliases[@]}"; do
     for candidate in \
       "$DATA_ROOT/$alias" \
-      "$DATA_ROOT/few_shot_classification/$alias"
+      "$DATA_ROOT/data/$alias" \
+      "$DATA_ROOT/finetune/data/$alias" \
+      "$DATA_ROOT/few_shot_classification/$alias" \
+      "$DATA_ROOT/few_shot_classification/data/$alias" \
+      "$DATA_ROOT/few_shot_classification/finetune/data/$alias"
     do
       if [[ -d "$candidate" ]]; then
         target="$(cd "$candidate" && pwd)"
@@ -108,7 +112,7 @@ link_dataset() {
   if [[ -z "$target" ]]; then
     echo "Dataset $name not found under $DATA_ROOT"
     echo "Available directories:"
-    find "$DATA_ROOT" -maxdepth 2 -type d | sed -n '1,80p'
+    find "$DATA_ROOT" -maxdepth 4 -type d | sed -n '1,120p'
     exit 1
   fi
 
