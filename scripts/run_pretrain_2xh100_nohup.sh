@@ -19,7 +19,7 @@ export LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
 export TARGET_NORM="${TARGET_NORM:-patch}"
 export INIT_CKPT="${INIT_CKPT:-}"
 export INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
-export SAVE_FREQ="${SAVE_FREQ:-10}"
+export SAVE_FREQ="${SAVE_FREQ:-50}"
 
 {
   echo "RUN_NAME=$RUN_NAME"
