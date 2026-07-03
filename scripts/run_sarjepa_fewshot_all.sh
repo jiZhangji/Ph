@@ -9,6 +9,9 @@ DATA_ROOT="${DATA_ROOT:-$ROOT/dataset/modelscope/extracted/classification_datase
 if [[ ! -d "$DATA_ROOT" ]]; then
   DATA_ROOT="${DATA_ROOT_FALLBACK:-$ROOT/dataset/modelscope/extracted/classification_dataset}"
 fi
+if [[ -d "$DATA_ROOT" ]]; then
+  DATA_ROOT="$(cd "$DATA_ROOT" && pwd)"
+fi
 
 CHECKPOINT="${CHECKPOINT:-$ROOT/runs/pretrain_2xh100_stable_full_bs512/checkpoint-299.pth}"
 OUTPUT_DIR="${OUTPUT_DIR:-$FINETUNE_DIR/output_sarjepa}"
