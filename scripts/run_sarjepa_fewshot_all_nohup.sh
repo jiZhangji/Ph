@@ -16,7 +16,7 @@ export OUTPUT_DIR="${OUTPUT_DIR:-few_shot_classification/finetune/output_${RUN_N
 export DATASETS="${DATASETS:-MSTAR_SOC New_FUSAR SAR_ACD}"
 export PROTOCOLS="${PROTOCOLS:-MIM_finetune MIM_linear}"
 export SHOTS="${SHOTS:-10 20 40}"
-export SEEDS="${SEEDS:-0 1 2 3 4}"
+export SEEDS="${SEEDS:-}"
 export FORCE="${FORCE:-0}"
 
 {
@@ -28,7 +28,7 @@ export FORCE="${FORCE:-0}"
   echo "DATASETS=$DATASETS"
   echo "PROTOCOLS=$PROTOCOLS"
   echo "SHOTS=$SHOTS"
-  echo "SEEDS=$SEEDS"
+  echo "SEEDS=${SEEDS:-protocol defaults}"
   echo "FORCE=$FORCE"
 } > "$LOG_FILE"
 

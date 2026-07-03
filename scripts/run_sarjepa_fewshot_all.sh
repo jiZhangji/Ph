@@ -15,7 +15,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$FINETUNE_DIR/output_sarjepa}"
 DATASETS="${DATASETS:-MSTAR_SOC New_FUSAR SAR_ACD}"
 PROTOCOLS="${PROTOCOLS:-MIM_finetune MIM_linear}"
 SHOTS="${SHOTS:-10 20 40}"
-SEEDS="${SEEDS:-0 1 2 3 4}"
+SEEDS="${SEEDS:-}"
 CFG="${CFG:-vit_b16}"
 FORCE="${FORCE:-0}"
 
@@ -114,9 +114,16 @@ for raw_dataset in $DATASETS; do
 
   for raw_protocol in $PROTOCOLS; do
     trainer="$(resolve_trainer_name "$raw_protocol")"
+    if [[ -n "$SEEDS" ]]; then
+      run_seeds="$SEEDS"
+    elif [[ "$trainer" == "MIM_linear" ]]; then
+      run_seeds="0 1 2 3 4 5"
+    else
+      run_seeds="0 1 2 3 4"
+    fi
 
     for shots in $SHOTS; do
-      for seed in $SEEDS; do
+      for seed in $run_seeds; do
         run_dir="$OUTPUT_DIR/${dataset}/${trainer}/${CFG}_${shots}shots/seed${seed}"
         if [[ -d "$run_dir" && "$FORCE" != "1" ]]; then
           echo "Skip existing: $run_dir"
