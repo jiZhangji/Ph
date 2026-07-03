@@ -92,6 +92,8 @@ class SARPretrainClassifier(nn.Module):
         super().__init__()
         self.backbone = models_lomar.mae_vit_base_patch16()
         self.head = nn.Linear(768, num_classes)
+        self.use_sfafm = os.environ.get("MIM_USE_SFAFM", "1") != "0"
+        print(f"Use downstream SFAFM: {self.use_sfafm}")
 
         if checkpoint_path:
             load_pretrained_backbone(self.backbone, checkpoint_path)
@@ -111,5 +113,5 @@ class SARPretrainClassifier(nn.Module):
                 param.requires_grad = False
 
     def forward(self, image):
-        features = self.backbone.forward_features(image, use_sfafm=True)
+        features = self.backbone.forward_features(image, use_sfafm=self.use_sfafm)
         return self.head(features)

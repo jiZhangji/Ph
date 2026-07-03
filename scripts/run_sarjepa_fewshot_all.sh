@@ -21,6 +21,10 @@ SHOTS="${SHOTS:-10 20 40}"
 SEEDS="${SEEDS:-}"
 CFG="${CFG:-vit_b16}"
 FORCE="${FORCE:-0}"
+LR="${LR:-}"
+EPOCHS="${EPOCHS:-}"
+BATCH_SIZE="${BATCH_SIZE:-}"
+USE_SFAFM="${USE_SFAFM:-1}"
 
 if [[ ! -d "$FINETUNE_DIR" ]]; then
   echo "Missing $FINETUNE_DIR"
@@ -125,6 +129,7 @@ ensure_dassl
 CHECKPOINT="$(cd "$(dirname "$CHECKPOINT")" && pwd)/$(basename "$CHECKPOINT")"
 OUTPUT_DIR="$(mkdir -p "$OUTPUT_DIR" && cd "$OUTPUT_DIR" && pwd)"
 export MIM_CKPT="$CHECKPOINT"
+export MIM_USE_SFAFM="$USE_SFAFM"
 
 cd "$FINETUNE_DIR"
 
@@ -154,6 +159,16 @@ for raw_dataset in $DATASETS; do
         fi
 
         echo "Running ${dataset} ${trainer} ${shots}-shot seed=${seed}"
+        extra_opts=(DATASET.NUM_SHOTS "$shots")
+        if [[ -n "$LR" ]]; then
+          extra_opts+=(OPTIM.LR "$LR")
+        fi
+        if [[ -n "$EPOCHS" ]]; then
+          extra_opts+=(OPTIM.MAX_EPOCH "$EPOCHS")
+        fi
+        if [[ -n "$BATCH_SIZE" ]]; then
+          extra_opts+=(DATALOADER.TRAIN_X.BATCH_SIZE "$BATCH_SIZE" DATALOADER.TEST.BATCH_SIZE "$BATCH_SIZE")
+        fi
         python train.py \
           --root "$FINETUNE_DIR/data" \
           --seed "$seed" \
@@ -161,7 +176,7 @@ for raw_dataset in $DATASETS; do
           --dataset-config-file "configs/datasets/${dataset}.yaml" \
           --config-file "configs/trainers/${trainer}/${CFG}.yaml" \
           --output-dir "$run_dir" \
-          DATASET.NUM_SHOTS "$shots"
+          "${extra_opts[@]}"
       done
     done
   done
