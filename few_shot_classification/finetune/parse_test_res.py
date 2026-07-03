@@ -154,7 +154,7 @@ def main(args, end_signal):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # parser.add_argument("directory", type=str, help="path to directory")
+    parser.add_argument("directory", type=str, help="path to directory")
     parser.add_argument(
         "--ci95", action="store_true", help=r"compute 95\% confidence interval"
     )
@@ -171,33 +171,6 @@ if __name__ == "__main__":
 
     if args.test_log:
         end_signal = "=> result"
-
-    # args.ci95 = True
-    args.directory = 'output/MSTAR_SOC/MIM_finetune/vit_b16_20shots/'
-    args.directory = 'output/New_FUSAR/MIM_finetune/vit_b16_20shots/'
-    args.directory = 'output/SAR_ACD/MIM_finetune/vit_b16_20shots/'
-
-    args.directory = 'output/MSTAR_SOC/MIM_linear/vit_b16_20shots/'
-    # args.directory = 'output/New_FUSAR/MIM_linear/vit_b16_20shots/'
-    # args.directory = 'output/SAR_ACD/MIM_linear/vit_b16_20shots/'
-
-    # args.directory = 'output/MyDataset/MIM_linear/vit_b16_20shots/'
-    #
-    # args.directory = 'output/MSTAR_EOC1/MIM_finetune/vit_b16_40shots/'
-    # args.directory = 'output/MSTAR_EOC2C/MIM_finetune/vit_b16_40shots/'
-    # args.directory = 'output/MSTAR_EOC2V/MIM_finetune/vit_b16_40shots/'
-    #
-
-    # args.directory = 'output/SAMPLE/MIM_finetune/vit_b16_10shots/'
-
-    # args.directory = 'output/MSTAR_SOC/MIM_finetune/vit_b16_25shots/'
-    # args.directory = 'output/MSTAR_EOC1/MIM_finetune/vit_b16_1shots/'
-    # args.directory = 'output/MSTAR_EOC2C/MIM_finetune/vit_b16_25shots/'
-    # args.directory = 'output/MSTAR_EOC2V/MIM_finetune/vit_b16_1shots/'
-
-
-    # args.directory = 'output/New_FUSAR/CNN/vit_b16_25shots/'
-
 
     main(args, end_signal)
 

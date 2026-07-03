@@ -167,4 +167,6 @@ for raw_dataset in $DATASETS; do
   done
 done
 
-python parse_test_res.py "$OUTPUT_DIR" || true
+find "$OUTPUT_DIR" -mindepth 3 -maxdepth 3 -type d | sort | while read -r result_dir; do
+  python parse_test_res.py "$result_dir" --test-log --keyword accuracy || true
+done

@@ -19,139 +19,25 @@ CUSTOM_TEMPLATES = {
     'MSTAR_SOC': 'a photo of {}.',
 }
 
-from functools import partial
-
-import torch
-import torch.nn as nn
-
-import timm.models.vision_transformer
-import vision_transformer_irpe
-
-class VisionTransformer(vision_transformer_irpe.VisionTransformer):
-    """ Vision Transformer with support for global average pooling
-    """
-
-    def __init__(self, global_pool=False, **kwargs):
-        super(VisionTransformer, self).__init__(**kwargs)
-
-        self.global_pool = global_pool
-
-        if self.global_pool:
-            norm_layer = kwargs['norm_layer']
-            embed_dim = kwargs['embed_dim']
-            self.fc_norm = norm_layer(embed_dim)
-
-            del self.norm  # remove the original norm
-
-    def forward_features(self, x):
-        B = x.shape[0]
-        x = self.patch_embed(x)
-
-        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        x = torch.cat((cls_tokens, x), dim=1)
-        x = self.pos_drop(x)
-
-        for blk in self.blocks:
-            x = blk(x)
-
-        if self.global_pool:
-            x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
-            outcome = self.fc_norm(x)
-        else:
-            x = self.norm(x)
-            outcome = x[:, 0]
-
-        return outcome
-
-
-def interpolate_pos_embed(model, checkpoint_model):
-    if 'pos_embed' in checkpoint_model:
-        pos_embed_checkpoint = checkpoint_model['pos_embed']
-        embedding_size = pos_embed_checkpoint.shape[-1]
-        num_patches = model.patch_embed.num_patches
-        num_extra_tokens = model.pos_embed.shape[-2] - num_patches
-        # height (== width) for the checkpoint position embedding
-        orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
-        # height (== width) for the new position embedding
-        new_size = int(num_patches ** 0.5)
-        # class_token and dist_token are kept unchanged
-        if orig_size != new_size:
-            print("Position interpolate from %dx%d to %dx%d" % (orig_size, orig_size, new_size, new_size))
-            extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
-            # only the position tokens are interpolated
-            pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
-            pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
-            pos_tokens = torch.nn.functional.interpolate(
-                pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
-            pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
-            new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
-            checkpoint_model['pos_embed'] = new_pos_embed
+from trainers.mim_sar_encoder import SARPretrainClassifier
 
 class CustomCLIP(nn.Module):
 
     def __init__(self, cfg, classnames):
         super().__init__()
-        # model = VisionTransformer(
-        # img_size=224, patch_size=16, embed_dim=192, in_chans=1, num_classes=len(classnames), depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True,
-        # norm_layer=partial(nn.LayerNorm, eps=1e-6))
-
-        # model = VisionTransformer(
-        # img_size=224, patch_size=16, embed_dim=384, in_chans=1, num_classes=len(classnames), depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True,
-        # norm_layer=partial(nn.LayerNorm, eps=1e-6))
-
-        model = VisionTransformer(
-        img_size=224, patch_size=16, embed_dim=768, in_chans=1, num_classes=len(classnames), depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6))
-
-        # model = VisionTransformer(
-        # img_size=224, patch_size=16, embed_dim=1024, in_chans=1, num_classes=len(classnames), depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
-        # norm_layer=partial(nn.LayerNorm, eps=1e-6))
-
-
-        # model = VisionTransformer(
-        # img_size=224, patch_size=14, embed_dim=1280, in_chans=1, num_classes=len(classnames), depth=32, num_heads=16, mlp_ratio=4, qkv_bias=True,
-        # norm_layer=partial(nn.LayerNorm, eps=1e-6))
-        #
         checkpoint_path = os.environ.get(
             'MIM_CKPT',
             '../weights/SAR-JEPA/checkpoint-200.pth',
         )
-        print(f'Loading checkpoint from {checkpoint_path}')
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-
-        checkpoint = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
-        checkpoint_model = {k.replace('module.',''):v for k,v in checkpoint.items()}
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias']:
-            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
-        # load pre-trained model
-        print('load pre-trained model')
-        # interpolate_pos_embed(model, checkpoint_model)
-
-        # load pre-trained model
-        msg = model.load_state_dict(checkpoint_model, strict=False)
-        assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
-        print(msg)
-
-        # manually initialize fc layer: following MoCo v3
-        from timm.models.layers import trunc_normal_
-        trunc_normal_(model.head.weight, std=0.01)
-
-        model.head = torch.nn.Sequential(torch.nn.BatchNorm1d(model.head.in_features, affine=False, eps=1e-6),
-                                         model.head)
-
-        # freeze all but the head
-        for name, p in model.named_parameters():
-            p.requires_grad = False
-            # if 'blocks.4' in name:
-            #     p.requires_grad_(True)
-            # if 'blocks.5' in name:
-            #     p.requires_grad_(True)
-        for _, p in model.head.named_parameters():
-            p.requires_grad = True
-
+        model = SARPretrainClassifier(
+            num_classes=len(classnames),
+            checkpoint_path=checkpoint_path,
+            linear_probe=True,
+        )
+        model.head = torch.nn.Sequential(
+            torch.nn.BatchNorm1d(model.head.in_features, affine=False, eps=1e-6),
+            model.head,
+        )
         self.image_encoder = model.cuda()
 
 
