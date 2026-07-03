@@ -19,7 +19,7 @@ export BATCH_SIZE="${BATCH_SIZE:-256}"
 export BLR="${BLR:-5e-5}"
 export WARMUP_EPOCHS="${WARMUP_EPOCHS:-20}"
 export EPOCHS="${EPOCHS:-300}"
-export SAVE_FREQ="${SAVE_FREQ:-50}"
+export SAVE_FREQ="${SAVE_FREQ:-25}"
 export NUM_WORKERS="${NUM_WORKERS:-16}"
 
 export GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
