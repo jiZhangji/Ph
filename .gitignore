@@ -31,3 +31,4 @@ dataset/*
 !dataset/SARSim/
 !dataset/SARSim/*.png
 weights/
+baselines/
