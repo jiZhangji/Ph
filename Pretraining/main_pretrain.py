@@ -33,6 +33,35 @@ import models_lomar
 from engine_pretrain import train_one_epoch
 
 
+def build_pretrain_param_groups(model, weight_decay, encoder_lr_scale=1.0):
+    """Create AdamW groups with optional smaller LR for initialized encoder."""
+    encoder_prefixes = ("patch_embed.", "cls_token", "pos_embed", "blocks.", "norm.")
+    no_decay_names = {"cls_token", "pos_embed", "mask_token"}
+    groups = {
+        "new_decay": {"params": [], "weight_decay": weight_decay, "lr_scale": 1.0},
+        "new_no_decay": {"params": [], "weight_decay": 0.0, "lr_scale": 1.0},
+        "encoder_decay": {"params": [], "weight_decay": weight_decay, "lr_scale": encoder_lr_scale},
+        "encoder_no_decay": {"params": [], "weight_decay": 0.0, "lr_scale": encoder_lr_scale},
+    }
+    counts = {key: 0 for key in groups}
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        is_encoder = name.startswith(encoder_prefixes)
+        no_decay = param.ndim == 1 or name.endswith(".bias") or name in no_decay_names
+        key = ("encoder" if is_encoder else "new") + ("_no_decay" if no_decay else "_decay")
+        groups[key]["params"].append(param)
+        counts[key] += param.numel()
+
+    param_groups = [group for group in groups.values() if group["params"]]
+    print("Optimizer parameter groups:")
+    for key, count in counts.items():
+        if count:
+            print(f"  {key}: {count / 1e6:.2f}M params, lr_scale={groups[key]['lr_scale']}, wd={groups[key]['weight_decay']}")
+    return param_groups
+
+
 def _checkpoint_state_dict(checkpoint):
     if isinstance(checkpoint, dict):
         for key in ("model", "state_dict", "module"):
@@ -144,6 +173,8 @@ def get_args_parser():
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
                         help='weight decay (default: 0.05)')
+    parser.add_argument('--encoder_lr_scale', type=float, default=1.0,
+                        help='LR multiplier for initialized encoder parameters; use <1 to protect pretrained features')
 
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='learning rate (absolute lr)')
@@ -335,7 +366,9 @@ def main(args):
         model_without_ddp = model.module
 
     # following timm: set wd as 0 for bias and norm layers
-    param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
+    param_groups = build_pretrain_param_groups(
+        model_without_ddp, args.weight_decay, args.encoder_lr_scale
+    )
     # param_groups = optim_factory.param_groups_weight_decay(model_without_ddp, args.weight_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     print(optimizer)

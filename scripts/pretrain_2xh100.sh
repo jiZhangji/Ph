@@ -21,6 +21,11 @@ LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
 TARGET_NORM="${TARGET_NORM:-patch}"
 INIT_CKPT="${INIT_CKPT:-}"
 INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
+ENCODER_LR_SCALE="${ENCODER_LR_SCALE:-1.0}"
+SASGT_SCALES="${SASGT_SCALES:-0.8,1.6,3.2,6.4}"
+SASGT_TEMPERATURE="${SASGT_TEMPERATURE:-1.0}"
+SASGT_GAMMA="${SASGT_GAMMA:-1.0}"
+SASGT_RELIABILITY_WINDOW="${SASGT_RELIABILITY_WINDOW:-7}"
 
 torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --model "$MODEL" \
@@ -34,9 +39,14 @@ torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --epochs "$EPOCHS" \
   --blr "$BLR" \
   --warmup_epochs "$WARMUP_EPOCHS" \
+  --encoder_lr_scale "$ENCODER_LR_SCALE" \
   --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
   --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
   --target_norm "$TARGET_NORM" \
+  --sasgt_scales "$SASGT_SCALES" \
+  --sasgt_temperature "$SASGT_TEMPERATURE" \
+  --sasgt_gamma "$SASGT_GAMMA" \
+  --sasgt_reliability_window "$SASGT_RELIABILITY_WINDOW" \
   --num_workers "$NUM_WORKERS" \
   --pin_mem \
   --window_size 7 \
