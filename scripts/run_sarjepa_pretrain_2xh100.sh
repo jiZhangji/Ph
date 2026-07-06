@@ -28,6 +28,13 @@ if grep -q "parser.add_argument('--local_rank', default=-1, type=int)" "$BASELIN
   sed -i "s/parser.add_argument('--local_rank', default=-1, type=int)/parser.add_argument('--local_rank', '--local-rank', default=-1, type=int)/" "$BASELINE_DIR/Pretraining/main_pretrain.py"
 fi
 
+# NumPy 1.24 removed deprecated aliases used by older MAE/SAR-JEPA code.
+find "$BASELINE_DIR/Pretraining" -type f -name "*.py" -print0 \
+  | xargs -0 sed -i \
+      -e 's/np\.float/float/g' \
+      -e 's/np\.int/int/g' \
+      -e 's/np\.bool/bool/g'
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
