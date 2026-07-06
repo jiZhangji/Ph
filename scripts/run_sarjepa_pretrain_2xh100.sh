@@ -8,6 +8,14 @@ if [[ ! -d "$BASELINE_DIR/Pretraining" ]]; then
   bash "$ROOT/scripts/setup_sarjepa_baseline.sh"
 fi
 
+# SAR-JEPA ships a Pretraining/profile.py script. With newer PyTorch/torchvision,
+# cProfile imports the stdlib "profile" module during startup; when we run from
+# Pretraining/, that local file shadows stdlib profile and triggers its timm
+# version assertion. The file is only a profiling helper, so move it aside.
+if [[ -f "$BASELINE_DIR/Pretraining/profile.py" ]]; then
+  mv "$BASELINE_DIR/Pretraining/profile.py" "$BASELINE_DIR/Pretraining/profile_sarjepa.py"
+fi
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
