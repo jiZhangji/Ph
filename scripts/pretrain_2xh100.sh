@@ -19,6 +19,7 @@ WARMUP_EPOCHS="${WARMUP_EPOCHS:-20}"
 GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
 LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
 TARGET_NORM="${TARGET_NORM:-patch}"
+TARGET_MODE="${TARGET_MODE:-sasgt}"
 INIT_CKPT="${INIT_CKPT:-}"
 INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
 ENCODER_LR_SCALE="${ENCODER_LR_SCALE:-1.0}"
@@ -43,6 +44,7 @@ torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
   --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
   --target_norm "$TARGET_NORM" \
+  --target_mode "$TARGET_MODE" \
   --sasgt_scales "$SASGT_SCALES" \
   --sasgt_temperature "$SASGT_TEMPERATURE" \
   --sasgt_gamma "$SASGT_GAMMA" \

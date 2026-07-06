@@ -229,6 +229,8 @@ def get_args_parser():
     parser.add_argument('--lfst_loss_weight', default=0.3, type=float)
     parser.add_argument('--target_norm', default='patch', choices=('none', 'patch', 'image'),
                         help='normalization for fixed physical reconstruction targets')
+    parser.add_argument('--target_mode', default='sasgt', choices=('sasgt', 'sarjepa'),
+                        help='spatial target type: sasgt for PH target, sarjepa for SAR-JEPA ratio-gradient target')
     parser.add_argument('--sasgt_scales', default='0.8,1.6,3.2,6.4', type=str)
     parser.add_argument('--sasgt_temperature', default=1.0, type=float)
     parser.add_argument('--sasgt_gamma', default=1.0, type=float)
@@ -329,6 +331,7 @@ def main(args):
         grad_loss_weight=args.grad_loss_weight,
         lfst_loss_weight=args.lfst_loss_weight,
         target_norm=args.target_norm,
+        target_mode=args.target_mode,
         sasgt_scales=sasgt_scales,
         sasgt_temperature=args.sasgt_temperature,
         sasgt_gamma=args.sasgt_gamma,

@@ -187,6 +187,53 @@ class LFST_Target(nn.Module):
         return patches
 
 
+class SARJEPATarget(nn.Module):
+    """SAR-JEPA multi-scale ratio-gradient target at 5/9/13/17 kernels."""
+
+    def __init__(self, kernel_sizes=(5, 9, 13, 17), eps=1e-2):
+        super().__init__()
+        self.kernel_sizes = tuple(int(k) for k in kernel_sizes)
+        self.eps = float(eps)
+        for index, kernel_size in enumerate(self.kernel_sizes):
+            radius = int(kernel_size)
+            m13 = np.concatenate([
+                np.ones([radius + 1, 2 * radius + 1]),
+                np.zeros([radius, 2 * radius + 1]),
+            ], axis=0)
+            m23 = np.concatenate([
+                np.zeros([radius, 2 * radius + 1]),
+                np.ones([radius + 1, 2 * radius + 1]),
+            ], axis=0)
+            m11 = np.concatenate([
+                np.ones([2 * radius + 1, radius + 1]),
+                np.zeros([2 * radius + 1, radius]),
+            ], axis=1)
+            m21 = np.concatenate([
+                np.zeros([2 * radius + 1, radius]),
+                np.ones([2 * radius + 1, radius + 1]),
+            ], axis=1)
+            shape = (1, 1, 2 * radius + 1, 2 * radius + 1)
+            self.register_buffer(f"weight_x1_{index}", torch.from_numpy(m11).float().view(shape))
+            self.register_buffer(f"weight_x2_{index}", torch.from_numpy(m21).float().view(shape))
+            self.register_buffer(f"weight_y1_{index}", torch.from_numpy(m13).float().view(shape))
+            self.register_buffer(f"weight_y2_{index}", torch.from_numpy(m23).float().view(shape))
+
+    @torch.no_grad()
+    def forward(self, x):
+        x = x.float()
+        targets = []
+        for index, kernel_size in enumerate(self.kernel_sizes):
+            padded = F.pad(x, pad=(kernel_size, kernel_size, kernel_size, kernel_size), mode="reflect") + self.eps
+            gx_1 = F.conv2d(padded, getattr(self, f"weight_x1_{index}"), stride=1, padding=0)
+            gx_2 = F.conv2d(padded, getattr(self, f"weight_x2_{index}"), stride=1, padding=0)
+            gy_1 = F.conv2d(padded, getattr(self, f"weight_y1_{index}"), stride=1, padding=0)
+            gy_2 = F.conv2d(padded, getattr(self, f"weight_y2_{index}"), stride=1, padding=0)
+            gx = torch.log(gx_1 / (gx_2 + 1e-12))
+            gy = torch.log(gy_1 / (gy_2 + 1e-12))
+            targets.append(torch.stack([gx, gy], dim=-1).norm(dim=-1))
+        return torch.cat(targets, dim=1)
+
+
 
 # 20250812-----------------------------------------------------------------------
 import torch.nn.init as init
@@ -543,6 +590,7 @@ class MaskedAutoencoderViT(nn.Module):
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False,
                  lfst_cutoff=30, grad_loss_weight=1.0, lfst_loss_weight=0.3,
                  target_norm="patch",
+                 target_mode="sasgt",
                  sasgt_scales=(0.8, 1.6, 3.2, 6.4), sasgt_temperature=1.0,
                  sasgt_gamma=1.0, sasgt_reliability_window=7):
         super().__init__()
@@ -602,6 +650,9 @@ class MaskedAutoencoderViT(nn.Module):
         if target_norm not in ("none", "patch", "image"):
             raise ValueError("target_norm must be one of: none, patch, image")
         self.target_norm = target_norm
+        if target_mode not in ("sasgt", "sarjepa"):
+            raise ValueError("target_mode must be one of: sasgt, sarjepa")
+        self.target_mode = target_mode
         # --------------------------------------------------------------------------  
         # Fixed spatial target generator (no trainable parameters).
         self.sasgt_builder = SASGTTarget(
@@ -610,10 +661,12 @@ class MaskedAutoencoderViT(nn.Module):
             gamma=sasgt_gamma,
             reliability_window=sasgt_reliability_window,
         )
+        self.sarjepa_builder = SARJEPATarget()
 
-        # 修改预测头的输出维度！
-        # Two SASGT channels are predicted for every pixel in a patch.
-        self.decoder_pred = nn.Linear(decoder_embed_dim, self.patch_size**2 * 2, bias=True)
+        spatial_target_channels = 4 if self.target_mode == "sarjepa" else 2
+        self.decoder_pred = nn.Linear(
+            decoder_embed_dim, self.patch_size**2 * spatial_target_channels, bias=True
+        )
         # --------------------------------------------------------------------------
         # MAE decoder specifics
 
@@ -957,11 +1010,12 @@ class MaskedAutoencoderViT(nn.Module):
 
 
     def forward_loss(self, imgs, pred, mask_indices, num_window, ids_restore):
-        # 1. 直接获取 (B, 4, H, W) 的多尺度梯度目标
         with torch.no_grad():
-            t_spat = self.sasgt_builder(imgs)
+            if self.target_mode == "sarjepa":
+                t_spat = self.sarjepa_builder(imgs)
+            else:
+                t_spat = self.sasgt_builder(imgs)
             
-        # 2. 将其切分为 patch: (N, L, P*P*4)
         target = self.patchify(t_spat)
 
         N, P_len, H_dim = target.shape
@@ -985,8 +1039,11 @@ class MaskedAutoencoderViT(nn.Module):
         # SASGT spatial-target loss.
         loss_grad, grad_stats = self.forward_loss(imgs, pred_grad_like, mask_indices, num_window, ids_restore)
         
-        # 低频结构损失 (LFST)
-        loss_lfst, lfst_stats = self.forward_loss_lfst(imgs, pred_lfst, mask_indices, num_window, ids_restore)
+        if self.lfst_loss_weight > 0:
+            loss_lfst, lfst_stats = self.forward_loss_lfst(imgs, pred_lfst, mask_indices, num_window, ids_restore)
+        else:
+            loss_lfst = loss_grad.new_zeros(())
+            lfst_stats = {}
 
         # 总损失
         loss_grad_weighted = self.grad_loss_weight * loss_grad
