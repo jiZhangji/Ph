@@ -21,4 +21,5 @@ EPOCHS="${EPOCHS:-300}" \
 SAVE_FREQ="${SAVE_FREQ:-50}" \
 INIT_CKPT="${INIT_CKPT:-weights/mae_pretrain_vit_base.pth}" \
 INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}" \
+RESUME="${RESUME:-}" \
 bash scripts/pretrain_2xh100.sh

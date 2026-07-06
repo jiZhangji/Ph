@@ -22,6 +22,7 @@ TARGET_NORM="${TARGET_NORM:-patch}"
 TARGET_MODE="${TARGET_MODE:-sasgt}"
 INIT_CKPT="${INIT_CKPT:-}"
 INIT_CKPT_SCOPE="${INIT_CKPT_SCOPE:-encoder}"
+RESUME="${RESUME:-}"
 ENCODER_LR_SCALE="${ENCODER_LR_SCALE:-1.0}"
 SASGT_SCALES="${SASGT_SCALES:-0.8,1.6,3.2,6.4}"
 SASGT_TEMPERATURE="${SASGT_TEMPERATURE:-1.0}"
@@ -56,4 +57,5 @@ torchrun --standalone --nproc_per_node="$GPUS" Pretraining/main_pretrain.py \
   --mask_ratio 0.8 \
   --save_freq "$SAVE_FREQ" \
   --init_ckpt "$INIT_CKPT" \
-  --init_ckpt_scope "$INIT_CKPT_SCOPE"
+  --init_ckpt_scope "$INIT_CKPT_SCOPE" \
+  --resume "$RESUME"
