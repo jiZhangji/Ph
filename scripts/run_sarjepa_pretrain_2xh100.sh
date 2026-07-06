@@ -64,6 +64,40 @@ if grep -q "optim_factory.param_groups_weight_decay" "$BASELINE_DIR/Pretraining/
   sed -i 's/optim_factory\.param_groups_weight_decay/optim_factory.add_weight_decay/g' "$BASELINE_DIR/Pretraining/main_pretrain.py"
 fi
 
+# timm==0.3.x also imports torch._six on old installations. Patch the active
+# environment in-place before SAR-JEPA imports timm.
+python - <<'PY'
+import pathlib
+import site
+import sys
+
+roots = []
+for getter in (site.getsitepackages,):
+    try:
+        roots.extend(getter())
+    except Exception:
+        pass
+try:
+    roots.append(site.getusersitepackages())
+except Exception:
+    pass
+roots.extend(sys.path)
+
+seen = set()
+for root in roots:
+    if not root or root in seen:
+        continue
+    seen.add(root)
+    helper = pathlib.Path(root) / "timm" / "models" / "layers" / "helpers.py"
+    if not helper.exists():
+        continue
+    text = helper.read_text()
+    patched = text.replace("from torch._six import container_abcs", "import collections.abc as container_abcs")
+    if patched != text:
+        helper.write_text(patched)
+        print(f"Patched timm torch._six compatibility: {helper}")
+PY
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
