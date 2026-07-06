@@ -58,11 +58,46 @@ for path in root.rglob("*.py"):
         path.write_text(patched)
 PY
 
-# timm versions differ: some expose param_groups_weight_decay, while the
-# SAR-JEPA/MAE code path also works with add_weight_decay.
-if grep -q "optim_factory.param_groups_weight_decay" "$BASELINE_DIR/Pretraining/main_pretrain.py"; then
-  sed -i 's/optim_factory\.param_groups_weight_decay/optim_factory.add_weight_decay/g' "$BASELINE_DIR/Pretraining/main_pretrain.py"
-fi
+# timm optimizer helper names differ across versions, and some installations
+# expose neither helper. Inject a local fallback so the official code can run
+# without pinning the whole environment to an old timm release.
+python - "$BASELINE_DIR/Pretraining/main_pretrain.py" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+
+text = text.replace("optim_factory.param_groups_weight_decay", "optim_factory.add_weight_decay")
+
+fallback = '''\
+
+if not hasattr(optim_factory, "add_weight_decay"):
+    def _sarjepa_add_weight_decay(model, weight_decay=1e-5, skip_list=()):
+        decay = []
+        no_decay = []
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if len(param.shape) == 1 or name.endswith(".bias") or name in skip_list:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+        return [
+            {"params": no_decay, "weight_decay": 0.},
+            {"params": decay, "weight_decay": weight_decay},
+        ]
+    optim_factory.add_weight_decay = _sarjepa_add_weight_decay
+'''
+
+marker = "import timm.optim.optim_factory as optim_factory\n"
+if "_sarjepa_add_weight_decay" not in text:
+    if marker not in text:
+        raise SystemExit(f"Could not find optimizer import marker in {path}")
+    text = text.replace(marker, marker + fallback, 1)
+
+path.write_text(text)
+PY
 
 # timm==0.3.x also imports torch._six on old installations. Patch the active
 # environment in-place before SAR-JEPA imports timm.
