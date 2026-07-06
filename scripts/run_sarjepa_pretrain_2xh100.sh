@@ -16,6 +16,12 @@ if [[ -f "$BASELINE_DIR/Pretraining/profile.py" ]]; then
   mv "$BASELINE_DIR/Pretraining/profile.py" "$BASELINE_DIR/Pretraining/profile_sarjepa.py"
 fi
 
+# Official SAR-JEPA targets older PyTorch versions where torch._six existed.
+# PyTorch 2.x removed torch._six, and only math.inf is needed here.
+if grep -q "from torch._six import inf" "$BASELINE_DIR/Pretraining/util/misc.py"; then
+  sed -i 's/from torch\._six import inf/from math import inf/' "$BASELINE_DIR/Pretraining/util/misc.py"
+fi
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
