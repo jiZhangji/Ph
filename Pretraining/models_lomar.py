@@ -636,6 +636,9 @@ class MaskedAutoencoderViT(nn.Module):
 
         # 修改预测头的输出维度
         self.decoder_pred_lfst = nn.Linear(decoder_embed_dim, self.lfst_out_dim, bias=True)
+        if float(lfst_loss_weight) <= 0:
+            for param in self.decoder_pred_lfst.parameters():
+                param.requires_grad = False
         
         # 引入我们在上一步写好的 LFST_Target (请确保它被定义在上方或导入)
         self.lfst_builder = LFST_Target(
@@ -955,12 +958,13 @@ class MaskedAutoencoderViT(nn.Module):
         dec_feat = self.decoder_norm(x)   # (B*num_window, L_win+1, Ddec)
 
         # ===== two heads =====
-        pred_grad_like = self.decoder_pred(dec_feat)         
-        pred_lfst      = self.decoder_pred_lfst(dec_feat)    
+        pred_grad_like = self.decoder_pred(dec_feat)
+        pred_lfst = self.decoder_pred_lfst(dec_feat) if self.lfst_loss_weight > 0 else None
 
         # remove cls token for both heads
         pred_grad_like = pred_grad_like[:, 1:, :]            
-        pred_lfst      = pred_lfst[:, 1:, :]                 
+        if pred_lfst is not None:
+            pred_lfst = pred_lfst[:, 1:, :]
 
         return pred_grad_like, pred_lfst, mask_indices, ids_restore
 
