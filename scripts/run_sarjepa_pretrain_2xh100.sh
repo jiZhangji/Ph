@@ -22,6 +22,12 @@ if grep -q "from torch._six import inf" "$BASELINE_DIR/Pretraining/util/misc.py"
   sed -i 's/from torch\._six import inf/from math import inf/' "$BASELINE_DIR/Pretraining/util/misc.py"
 fi
 
+# Newer PyTorch launchers pass --local-rank, while the official SAR-JEPA
+# parser only defines --local_rank. Accept both spellings.
+if grep -q "parser.add_argument('--local_rank', default=-1, type=int)" "$BASELINE_DIR/Pretraining/main_pretrain.py"; then
+  sed -i "s/parser.add_argument('--local_rank', default=-1, type=int)/parser.add_argument('--local_rank', '--local-rank', default=-1, type=int)/" "$BASELINE_DIR/Pretraining/main_pretrain.py"
+fi
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
