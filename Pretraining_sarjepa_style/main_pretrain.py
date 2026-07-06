@@ -244,6 +244,11 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
+        if args.output_dir:
+            misc.save_model(
+                args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                loss_scaler=loss_scaler, epoch=epoch, checkpoint_name="last")
+
         if args.output_dir and (epoch % 50 == 0 or epoch + 1 == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,

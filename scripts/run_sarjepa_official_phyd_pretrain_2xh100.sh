@@ -23,6 +23,7 @@ MODEL="${MODEL:-mae_vit_base_patch16}"
 MASK_RATIO="${MASK_RATIO:-0.8}"
 WINDOW_SIZE="${WINDOW_SIZE:-7}"
 NUM_WINDOW="${NUM_WINDOW:-4}"
+RESUME="${RESUME:-}"
 
 # PhyD-only target/loss switches.
 GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
@@ -70,6 +71,7 @@ python -m torch.distributed.launch \
   --window_size "$WINDOW_SIZE" \
   --num_window "$NUM_WINDOW" \
   --mask_ratio "$MASK_RATIO" \
+  --resume "$RESUME" \
   --lfst_cutoff "$LFST_CUTOFF" \
   --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
   --lfst_loss_weight "$LFST_LOSS_WEIGHT" \

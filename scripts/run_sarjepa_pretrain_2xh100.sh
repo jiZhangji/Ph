@@ -99,6 +99,50 @@ if "_sarjepa_add_weight_decay" not in text:
 path.write_text(text)
 PY
 
+# Keep a rolling checkpoint-last.pth for robust resume after interruptions while
+# preserving the official 50-epoch checkpoint cadence.
+python - "$BASELINE_DIR/Pretraining/main_pretrain.py" "$BASELINE_DIR/Pretraining/util/misc.py" <<'PY'
+import pathlib
+import sys
+
+main_path = pathlib.Path(sys.argv[1])
+misc_path = pathlib.Path(sys.argv[2])
+
+misc_text = misc_path.read_text()
+old_sig = "def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler):"
+new_sig = "def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, checkpoint_name=None):"
+if old_sig in misc_text:
+    misc_text = misc_text.replace(old_sig, new_sig, 1)
+    misc_text = misc_text.replace(
+        "    epoch_name = str(epoch)\n",
+        "    epoch_name = str(epoch) if checkpoint_name is None else str(checkpoint_name)\n",
+        1,
+    )
+misc_path.write_text(misc_text)
+
+main_text = main_path.read_text()
+needle = """        if args.output_dir and (epoch % 50 == 0 or epoch + 1 == args.epochs):
+            misc.save_model(
+                args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                loss_scaler=loss_scaler, epoch=epoch)
+"""
+replacement = """        if args.output_dir:
+            misc.save_model(
+                args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                loss_scaler=loss_scaler, epoch=epoch, checkpoint_name="last")
+
+        if args.output_dir and (epoch % 50 == 0 or epoch + 1 == args.epochs):
+            misc.save_model(
+                args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                loss_scaler=loss_scaler, epoch=epoch)
+"""
+if "checkpoint_name=\"last\"" not in main_text:
+    if needle not in main_text:
+        raise SystemExit(f"Could not find SAR-JEPA save block in {main_path}")
+    main_text = main_text.replace(needle, replacement, 1)
+main_path.write_text(main_text)
+PY
+
 # timm==0.3.x also imports torch._six on old installations. Patch the active
 # environment in-place before SAR-JEPA imports timm.
 python - <<'PY'
@@ -153,6 +197,7 @@ MODEL="${MODEL:-mae_vit_base_patch16}"
 MASK_RATIO="${MASK_RATIO:-0.8}"
 WINDOW_SIZE="${WINDOW_SIZE:-7}"
 NUM_WINDOW="${NUM_WINDOW:-4}"
+RESUME="${RESUME:-}"
 
 DATA_PATH="$(cd "$DATA_PATH" && pwd)"
 mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
@@ -188,4 +233,5 @@ python -m torch.distributed.launch \
   --pin_mem \
   --window_size "$WINDOW_SIZE" \
   --num_window "$NUM_WINDOW" \
-  --mask_ratio "$MASK_RATIO"
+  --mask_ratio "$MASK_RATIO" \
+  --resume "$RESUME"
