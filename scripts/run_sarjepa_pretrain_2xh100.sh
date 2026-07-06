@@ -37,7 +37,7 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 alias_pattern = re.compile(r"\bnp\.(float|int|bool)\b")
-repair_pattern = re.compile(r"(?<!np\.)\b(float32|float64|int32|int64|bool_)\b")
+repair_pattern = re.compile(r"(?<![\w.])\b(float32|float64|int32|int64|bool_)\b")
 repairs = {
     "float32": "np.float32",
     "float64": "np.float64",
@@ -49,6 +49,8 @@ repairs = {
 for path in root.rglob("*.py"):
     text = path.read_text()
     text = text.replace("np.np.", "np.")
+    text = text.replace("torch.np.np.", "torch.")
+    text = text.replace("torch.np.", "torch.")
     patched = alias_pattern.sub(lambda m: {"float": "float", "int": "int", "bool": "bool"}[m.group(1)], text)
     # Repair files touched by an earlier broad sed patch.
     patched = repair_pattern.sub(lambda m: repairs[m.group(1)], patched)
