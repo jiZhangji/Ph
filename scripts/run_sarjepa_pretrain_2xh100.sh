@@ -55,6 +55,12 @@ for path in root.rglob("*.py"):
         path.write_text(patched)
 PY
 
+# timm versions differ: some expose param_groups_weight_decay, while the
+# SAR-JEPA/MAE code path also works with add_weight_decay.
+if grep -q "optim_factory.param_groups_weight_decay" "$BASELINE_DIR/Pretraining/main_pretrain.py"; then
+  sed -i 's/optim_factory\.param_groups_weight_decay/optim_factory.add_weight_decay/g' "$BASELINE_DIR/Pretraining/main_pretrain.py"
+fi
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
