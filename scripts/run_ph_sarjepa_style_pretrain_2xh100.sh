@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+DATA_PATH="${DATA_PATH:-dataset/modelscope/extracted/Pretraining_dataset}"
+OUTPUT_DIR="${OUTPUT_DIR:-runs/ph_sarjepa_style_2xh100}"
+LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
+GPUS="${GPUS:-2}"
+MASTER_PORT="${MASTER_PORT:-25643}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+EPOCHS="${EPOCHS:-300}"
+ACCUM_ITER="${ACCUM_ITER:-1}"
+BLR="${BLR:-1e-3}"
+WARMUP_EPOCHS="${WARMUP_EPOCHS:-20}"
+NUM_WORKERS="${NUM_WORKERS:-16}"
+MODEL="${MODEL:-mae_vit_base_patch16}"
+MASK_RATIO="${MASK_RATIO:-0.8}"
+WINDOW_SIZE="${WINDOW_SIZE:-7}"
+NUM_WINDOW="${NUM_WINDOW:-4}"
+GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
+LFST_LOSS_WEIGHT="${LFST_LOSS_WEIGHT:-1.0}"
+TARGET_NORM="${TARGET_NORM:-patch}"
+LFST_CUTOFF="${LFST_CUTOFF:-30}"
+SASGT_SCALES="${SASGT_SCALES:-0.8,1.6,3.2,6.4}"
+SASGT_TEMPERATURE="${SASGT_TEMPERATURE:-1.0}"
+SASGT_GAMMA="${SASGT_GAMMA:-1.0}"
+SASGT_RELIABILITY_WINDOW="${SASGT_RELIABILITY_WINDOW:-7}"
+
+mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
+
+echo "PH SAR-JEPA-style pretraining"
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+echo "DATA_PATH=$DATA_PATH"
+echo "OUTPUT_DIR=$OUTPUT_DIR"
+echo "BATCH_SIZE=$BATCH_SIZE"
+echo "EPOCHS=$EPOCHS"
+echo "BLR=$BLR"
+echo "GRAD_LOSS_WEIGHT=$GRAD_LOSS_WEIGHT"
+echo "LFST_LOSS_WEIGHT=$LFST_LOSS_WEIGHT"
+echo "TARGET_NORM=$TARGET_NORM"
+
+CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" \
+python -m torch.distributed.launch \
+  --nproc_per_node="$GPUS" \
+  --master_port="$MASTER_PORT" \
+  Pretraining_sarjepa_style/main_pretrain.py \
+  --model "$MODEL" \
+  --data_path "$DATA_PATH" \
+  --output_dir "$OUTPUT_DIR" \
+  --log_dir "$LOG_DIR" \
+  --device cuda \
+  --batch_size "$BATCH_SIZE" \
+  --accum_iter "$ACCUM_ITER" \
+  --epochs "$EPOCHS" \
+  --blr "$BLR" \
+  --warmup_epochs "$WARMUP_EPOCHS" \
+  --num_workers "$NUM_WORKERS" \
+  --pin_mem \
+  --window_size "$WINDOW_SIZE" \
+  --num_window "$NUM_WINDOW" \
+  --mask_ratio "$MASK_RATIO" \
+  --lfst_cutoff "$LFST_CUTOFF" \
+  --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
+  --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
+  --target_norm "$TARGET_NORM" \
+  --sasgt_scales "$SASGT_SCALES" \
+  --sasgt_temperature "$SASGT_TEMPERATURE" \
+  --sasgt_gamma "$SASGT_GAMMA" \
+  --sasgt_reliability_window "$SASGT_RELIABILITY_WINDOW"

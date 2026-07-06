@@ -98,6 +98,11 @@ for root in roots:
         print(f"Patched timm torch._six compatibility: {helper}")
 PY
 
+# The official loader walks every file and cv2.imread can return None for
+# unsupported/corrupt entries. Use the robust single-channel PIL loader from
+# this repo so SAR-JEPA and PH see the same image set.
+cp "$ROOT/Pretraining/util/datasets.py" "$BASELINE_DIR/Pretraining/util/datasets.py"
+
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR}"
