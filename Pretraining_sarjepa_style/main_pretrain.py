@@ -27,6 +27,24 @@ import timm
 # assert timm.__version__ == "0.3.2"  # version check
 import timm.optim.optim_factory as optim_factory
 
+if not hasattr(optim_factory, "add_weight_decay"):
+    def _add_weight_decay(model, weight_decay=1e-5, skip_list=()):
+        decay = []
+        no_decay = []
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if len(param.shape) == 1 or name.endswith(".bias") or name in skip_list:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+        return [
+            {"params": no_decay, "weight_decay": 0.},
+            {"params": decay, "weight_decay": weight_decay},
+        ]
+
+    optim_factory.add_weight_decay = _add_weight_decay
+
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
