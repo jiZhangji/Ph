@@ -24,6 +24,8 @@ MASK_RATIO="${MASK_RATIO:-0.8}"
 WINDOW_SIZE="${WINDOW_SIZE:-7}"
 NUM_WINDOW="${NUM_WINDOW:-4}"
 RESUME="${RESUME:-}"
+SAVE_EVERY_AFTER_EPOCH="${SAVE_EVERY_AFTER_EPOCH:--1}"
+SAVE_INTERVAL_AFTER_EPOCH="${SAVE_INTERVAL_AFTER_EPOCH:-10}"
 
 # PhyD-only target/loss switches.
 GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
@@ -50,6 +52,8 @@ echo "NUM_WINDOW=$NUM_WINDOW"
 echo "GRAD_LOSS_WEIGHT=$GRAD_LOSS_WEIGHT"
 echo "LFST_LOSS_WEIGHT=$LFST_LOSS_WEIGHT"
 echo "TARGET_NORM=$TARGET_NORM"
+echo "SAVE_EVERY_AFTER_EPOCH=$SAVE_EVERY_AFTER_EPOCH"
+echo "SAVE_INTERVAL_AFTER_EPOCH=$SAVE_INTERVAL_AFTER_EPOCH"
 
 CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" \
 python -m torch.distributed.launch \
@@ -60,6 +64,8 @@ python -m torch.distributed.launch \
   --data_path "$DATA_PATH" \
   --output_dir "$OUTPUT_DIR" \
   --log_dir "$LOG_DIR" \
+  --save_every_after_epoch "$SAVE_EVERY_AFTER_EPOCH" \
+  --save_interval_after_epoch "$SAVE_INTERVAL_AFTER_EPOCH" \
   --device cuda \
   --batch_size "$BATCH_SIZE" \
   --accum_iter "$ACCUM_ITER" \
