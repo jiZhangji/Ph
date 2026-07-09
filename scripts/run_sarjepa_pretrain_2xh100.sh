@@ -8,6 +8,14 @@ if [[ ! -d "$BASELINE_DIR/Pretraining" ]]; then
   bash "$ROOT/scripts/setup_sarjepa_baseline.sh"
 fi
 
+# Keep the official SAR-JEPA data pipeline intact. Older versions of this
+# wrapper replaced util/datasets.py with Ph's PIL loader to avoid cv2 read
+# failures, but that changes the pretraining distribution and invalidates
+# paper-level reproduction.
+if [[ -d "$BASELINE_DIR/.git" ]]; then
+  git -C "$BASELINE_DIR" show HEAD:Pretraining/util/datasets.py > "$BASELINE_DIR/Pretraining/util/datasets.py"
+fi
+
 # SAR-JEPA ships a Pretraining/profile.py script. With newer PyTorch/torchvision,
 # cProfile imports the stdlib "profile" module during startup; when we run from
 # Pretraining/, that local file shadows stdlib profile and triggers its timm
@@ -176,11 +184,6 @@ for root in roots:
         helper.write_text(patched)
         print(f"Patched timm torch._six compatibility: {helper}")
 PY
-
-# The official loader walks every file and cv2.imread can return None for
-# unsupported/corrupt entries. Use the robust single-channel PIL loader from
-# this repo so SAR-JEPA and PH see the same image set.
-cp "$ROOT/Pretraining/util/datasets.py" "$BASELINE_DIR/Pretraining/util/datasets.py"
 
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/runs/sarjepa_pretrain_2xh100}"
