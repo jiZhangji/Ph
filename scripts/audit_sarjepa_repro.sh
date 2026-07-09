@@ -44,14 +44,20 @@ if command -v git >/dev/null 2>&1; then
       Pretraining/main_pretrain.py \
       Pretraining/models_lomar.py \
       Pretraining/util/datasets.py \
-      Pretraining/util/misc.py
+      Pretraining/util/misc.py \
+      few_shot_classification/finetune/trainers/MIM_finetune.py \
+      few_shot_classification/finetune/trainers/MIM_linear.py
     do
       echo
       echo "--- diff summary: $rel ---"
-      if [[ -f "$BASELINE_DIR/$rel" && -f "$tmp_dir/SAR-JEPA-official/$rel" ]]; then
-        diff -u "$tmp_dir/SAR-JEPA-official/$rel" "$BASELINE_DIR/$rel" | sed -n '1,120p' || true
+      target="$BASELINE_DIR/$rel"
+      if [[ "$rel" == few_shot_classification/* ]]; then
+        target="$ROOT/$rel"
+      fi
+      if [[ -f "$target" && -f "$tmp_dir/SAR-JEPA-official/$rel" ]]; then
+        diff -u "$tmp_dir/SAR-JEPA-official/$rel" "$target" | sed -n '1,120p' || true
       else
-        echo "missing one side: official=$tmp_dir/SAR-JEPA-official/$rel baseline=$BASELINE_DIR/$rel"
+        echo "missing one side: official=$tmp_dir/SAR-JEPA-official/$rel target=$target"
       fi
     done
   else
