@@ -24,6 +24,7 @@ MASK_RATIO="${MASK_RATIO:-0.8}"
 WINDOW_SIZE="${WINDOW_SIZE:-7}"
 NUM_WINDOW="${NUM_WINDOW:-4}"
 RESUME="${RESUME:-}"
+INIT_CHECKPOINT="${INIT_CHECKPOINT:-}"
 SAVE_EVERY_AFTER_EPOCH="${SAVE_EVERY_AFTER_EPOCH:--1}"
 SAVE_INTERVAL_AFTER_EPOCH="${SAVE_INTERVAL_AFTER_EPOCH:-10}"
 
@@ -36,6 +37,8 @@ SASGT_SCALES="${SASGT_SCALES:-0.8,1.6,3.2,6.4}"
 SASGT_TEMPERATURE="${SASGT_TEMPERATURE:-1.0}"
 SASGT_GAMMA="${SASGT_GAMMA:-1.0}"
 SASGT_RELIABILITY_WINDOW="${SASGT_RELIABILITY_WINDOW:-7}"
+USE_SFAFM="${USE_SFAFM:-0}"
+SFAFM_REDUCTION="${SFAFM_REDUCTION:-4}"
 
 mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
 
@@ -52,8 +55,16 @@ echo "NUM_WINDOW=$NUM_WINDOW"
 echo "GRAD_LOSS_WEIGHT=$GRAD_LOSS_WEIGHT"
 echo "LFST_LOSS_WEIGHT=$LFST_LOSS_WEIGHT"
 echo "TARGET_NORM=$TARGET_NORM"
+echo "USE_SFAFM=$USE_SFAFM"
+echo "SFAFM_REDUCTION=$SFAFM_REDUCTION"
+echo "INIT_CHECKPOINT=$INIT_CHECKPOINT"
 echo "SAVE_EVERY_AFTER_EPOCH=$SAVE_EVERY_AFTER_EPOCH"
 echo "SAVE_INTERVAL_AFTER_EPOCH=$SAVE_INTERVAL_AFTER_EPOCH"
+
+extra_args=()
+if [[ "$USE_SFAFM" == "1" ]]; then
+  extra_args+=(--use_sfafm)
+fi
 
 CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" \
 python -m torch.distributed.launch \
@@ -78,6 +89,7 @@ python -m torch.distributed.launch \
   --num_window "$NUM_WINDOW" \
   --mask_ratio "$MASK_RATIO" \
   --resume "$RESUME" \
+  --init_checkpoint "$INIT_CHECKPOINT" \
   --lfst_cutoff "$LFST_CUTOFF" \
   --grad_loss_weight "$GRAD_LOSS_WEIGHT" \
   --lfst_loss_weight "$LFST_LOSS_WEIGHT" \
@@ -85,4 +97,6 @@ python -m torch.distributed.launch \
   --sasgt_scales "$SASGT_SCALES" \
   --sasgt_temperature "$SASGT_TEMPERATURE" \
   --sasgt_gamma "$SASGT_GAMMA" \
-  --sasgt_reliability_window "$SASGT_RELIABILITY_WINDOW"
+  --sasgt_reliability_window "$SASGT_RELIABILITY_WINDOW" \
+  --sfafm_reduction "$SFAFM_REDUCTION" \
+  "${extra_args[@]}"

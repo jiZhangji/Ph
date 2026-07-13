@@ -24,7 +24,7 @@ FORCE="${FORCE:-0}"
 LR="${LR:-}"
 EPOCHS="${EPOCHS:-}"
 BATCH_SIZE="${BATCH_SIZE:-}"
-USE_SFAFM="${USE_SFAFM:-1}"
+USE_SFAFM="${USE_SFAFM:-0}"
 
 if [[ ! -d "$FINETUNE_DIR" ]]; then
   echo "Missing $FINETUNE_DIR"

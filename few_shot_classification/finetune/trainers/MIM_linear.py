@@ -91,6 +91,20 @@ class CustomCLIP(nn.Module):
 
     def __init__(self, cfg, classnames):
         super().__init__()
+        use_sfafm = os.environ.get('MIM_USE_SFAFM', '0') != '0'
+        if use_sfafm:
+            from trainers.mim_sar_encoder import SARPretrainClassifier
+            checkpoint_path = os.environ.get(
+                'MIM_CKPT',
+                '../weights/SAR-JEPA/checkpoint-200.pth',
+            )
+            print('Building official-style PhyD encoder with SFAFM enabled')
+            self.image_encoder = SARPretrainClassifier(
+                num_classes=len(classnames),
+                checkpoint_path=checkpoint_path,
+                linear_probe=True,
+            ).cuda()
+            return
         # model = VisionTransformer(
         # img_size=224, patch_size=16, embed_dim=192, in_chans=1, num_classes=len(classnames), depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True,
         # norm_layer=partial(nn.LayerNorm, eps=1e-6))

@@ -296,6 +296,181 @@ class LFSTTarget(nn.Module):
         return (low - low_min) / (low_max - low_min + 1e-6)
 
 
+def _mean_channels(x):
+    if x.ndim != 4:
+        raise ValueError(f"Expected a 4D feature map, got shape {tuple(x.shape)}")
+    return x.mean(dim=(-2, -1), keepdim=True)
+
+
+def _std_channels(x):
+    mean = _mean_channels(x)
+    return ((x - mean).pow(2).mean(dim=(-2, -1), keepdim=True) + 1e-12).sqrt()
+
+
+class SFAFMUNetConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, dilation=1, negative_slope=0.1):
+        super().__init__()
+        self.identity = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.conv1 = nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            dilation=dilation,
+            padding=dilation,
+        )
+        self.conv2 = nn.Conv2d(
+            out_channels,
+            out_channels,
+            kernel_size=3,
+            dilation=dilation,
+            padding=dilation,
+        )
+        self.act = nn.LeakyReLU(negative_slope, inplace=False)
+
+    def forward(self, x):
+        residual = self.identity(x)
+        x = self.act(self.conv1(x))
+        x = self.act(self.conv2(x))
+        return x + residual
+
+
+class SFAFMDenseBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, dilation=1, growth_channels=8):
+        super().__init__()
+        self.conv1 = SFAFMUNetConvBlock(in_channels, growth_channels, dilation)
+        self.conv2 = SFAFMUNetConvBlock(growth_channels, growth_channels, dilation)
+        self.conv3 = nn.Conv2d(
+            in_channels + 2 * growth_channels,
+            out_channels,
+            kernel_size=3,
+            padding=1,
+        )
+        self.act = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+        for module in (self.conv1, self.conv2, self.conv3):
+            for layer in module.modules():
+                if isinstance(layer, nn.Conv2d):
+                    nn.init.xavier_normal_(layer.weight)
+                    layer.weight.data.mul_(0.1)
+                    if layer.bias is not None:
+                        nn.init.zeros_(layer.bias)
+
+    def forward(self, x):
+        x1 = self.act(self.conv1(x))
+        x2 = self.act(self.conv2(x1))
+        return self.act(self.conv3(torch.cat((x, x1, x2), dim=1)))
+
+
+class SFAFMInvertibleBlock(nn.Module):
+    def __init__(self, channels, dilation=1, clamp=0.8):
+        super().__init__()
+        if channels % 2 != 0:
+            raise ValueError("SFAFM spatial branch requires an even channel count")
+        split_channels = channels // 2
+        self.clamp = float(clamp)
+        self.t1 = SFAFMDenseBlock(split_channels, split_channels, dilation)
+        self.s1 = SFAFMDenseBlock(split_channels, split_channels, dilation)
+        self.t2 = SFAFMDenseBlock(split_channels, split_channels, dilation)
+
+    def forward(self, x):
+        xa, xb = x.chunk(2, dim=1)
+        za = xa + self.t1(xb)
+        scale = self.clamp * (torch.sigmoid(self.s1(za)) * 2 - 1)
+        zb = xb * torch.exp(scale) + self.t2(za)
+        return torch.cat((za, zb), dim=1)
+
+
+class SFAFMFrequencyProcess(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.pre = nn.Conv2d(channels, channels, kernel_size=1)
+        self.magnitude = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=1),
+            nn.LeakyReLU(0.1, inplace=False),
+            nn.Conv2d(channels, channels, kernel_size=1),
+        )
+        self.phase = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=1),
+            nn.LeakyReLU(0.1, inplace=False),
+            nn.Conv2d(channels, channels, kernel_size=1),
+        )
+        self.post = nn.Conv2d(channels, channels, kernel_size=1)
+
+    def forward(self, x):
+        input_dtype = x.dtype
+        height, width = x.shape[-2:]
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            x = x.float()
+            spectrum = torch.fft.rfft2(self.pre(x) + 1e-8, norm="backward")
+            magnitude = self.magnitude(torch.abs(spectrum))
+            phase = self.phase(torch.angle(spectrum))
+            reconstructed = torch.polar(magnitude, phase)
+            output = torch.fft.irfft2(
+                reconstructed,
+                s=(height, width),
+                norm="backward",
+            )
+            output = self.post(output.real)
+        return output.to(dtype=input_dtype)
+
+
+class SFAFM(nn.Module):
+    """Late-stage spatial-frequency adaptive fusion with identity initialization."""
+
+    def __init__(self, embed_dim, reduction=4):
+        super().__init__()
+        if embed_dim % reduction != 0:
+            raise ValueError("embed_dim must be divisible by the SFAFM reduction")
+        channels = embed_dim // reduction
+        if channels < 2 or channels % 2 != 0:
+            raise ValueError("Reduced SFAFM channels must be positive and even")
+
+        self.compress = nn.Conv2d(embed_dim, channels, kernel_size=1)
+        self.alpha_raw = nn.Parameter(torch.tensor(0.5))
+        self.spatial_projection = nn.Conv2d(channels, channels * 2, kernel_size=3, padding=1)
+        self.frequency_projection = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.spatial_process = nn.Sequential(
+            SFAFMInvertibleBlock(channels * 2),
+            nn.Conv2d(channels * 2, channels, kernel_size=1),
+        )
+        self.frequency_process = SFAFMFrequencyProcess(channels)
+        self.spatial_attention = nn.Sequential(
+            nn.Conv2d(channels, channels // 2, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.1, inplace=False),
+            nn.Conv2d(channels // 2, channels, kernel_size=3, padding=1),
+            nn.Sigmoid(),
+        )
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.channel_attention = nn.Sequential(
+            nn.Conv2d(channels * 2, channels // 2, kernel_size=1),
+            nn.LeakyReLU(0.1, inplace=False),
+            nn.Conv2d(channels // 2, channels * 2, kernel_size=1),
+            nn.Sigmoid(),
+        )
+        self.fusion = nn.Conv2d(channels * 2, channels, kernel_size=3, padding=1)
+        self.expand = nn.Conv2d(channels, embed_dim, kernel_size=1)
+
+        # The newly inserted module starts as an exact identity mapping.
+        nn.init.zeros_(self.expand.weight)
+        if self.expand.bias is not None:
+            nn.init.zeros_(self.expand.bias)
+
+    def forward(self, x):
+        residual = x
+        compressed = self.compress(x)
+        alpha = torch.sigmoid(self.alpha_raw)
+        spatial = self.spatial_process(self.spatial_projection(compressed) * alpha)
+        frequency = self.frequency_process(self.frequency_projection(compressed) * (1 - alpha))
+        spatial_mask = self.spatial_attention(spatial - frequency)
+        combined = spatial * spatial_mask + frequency
+        concatenated = torch.cat((combined, spatial), dim=1)
+        channel_mask = self.channel_attention(
+            _std_channels(concatenated) + self.avg_pool(concatenated)
+        )
+        fused = self.fusion(concatenated * channel_mask) + combined
+        return residual + self.expand(fused)
+
+
 class MaskedAutoencoderViT(nn.Module):
     """ Masked Autoencoder with VisionTransformer backbone
     """
@@ -306,7 +481,8 @@ class MaskedAutoencoderViT(nn.Module):
                  lfst_cutoff=30, grad_loss_weight=1.0, lfst_loss_weight=1.0,
                  target_norm="patch", sasgt_scales=(0.8, 1.6, 3.2, 6.4),
                  sasgt_temperature=1.0, sasgt_gamma=1.0,
-                 sasgt_reliability_window=7):
+                 sasgt_reliability_window=7, use_sfafm=False,
+                 sfafm_reduction=4):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -323,6 +499,10 @@ class MaskedAutoencoderViT(nn.Module):
             Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
+        self.use_sfafm = bool(use_sfafm)
+        self.sfafm_reduction = int(sfafm_reduction)
+        if self.use_sfafm:
+            self.img_SFAFM_process = SFAFM(embed_dim, reduction=self.sfafm_reduction)
 
         self.encoder_pred = nn.Linear(embed_dim, decoder_embed_dim, bias=True) # decoder to patch
         self.decoder_blocks = nn.ModuleList([
@@ -563,6 +743,8 @@ class MaskedAutoencoderViT(nn.Module):
         # apply Transformer blocks
         for blk in self.blocks:
             x = blk(x)
+        if self.use_sfafm:
+            x = self._apply_sfafm(x, window_size)
         x = self.norm(x)
 
         x = self.encoder_pred(x)
@@ -580,6 +762,37 @@ class MaskedAutoencoderViT(nn.Module):
         pred_lfst = pred_lfst[:, 1:, :]
 
         return pred_grad, pred_lfst, mask_indices, ids_restore
+
+    def _apply_sfafm(self, x, grid_size):
+        cls_token, patch_tokens = x[:, :1], x[:, 1:]
+        expected_tokens = grid_size * grid_size
+        if patch_tokens.shape[1] != expected_tokens:
+            raise ValueError(
+                f"SFAFM expected {expected_tokens} patch tokens for a {grid_size}x{grid_size} grid, "
+                f"got {patch_tokens.shape[1]}"
+            )
+        batch, _, channels = patch_tokens.shape
+        feature_map = patch_tokens.transpose(1, 2).reshape(
+            batch, channels, grid_size, grid_size
+        )
+        feature_map = self.img_SFAFM_process(feature_map)
+        patch_tokens = feature_map.flatten(2).transpose(1, 2)
+        return torch.cat((cls_token, patch_tokens), dim=1)
+
+    def forward_features(self, imgs, use_sfafm=None):
+        """Return the final CLS representation for downstream evaluation."""
+        x = self.patch_embed(imgs).type(torch.float32)
+        cls_token = self.cls_token.expand(x.shape[0], -1, -1)
+        x = torch.cat((cls_token, x), dim=1)
+        for block in self.blocks:
+            x = block(x)
+        apply_sfafm = self.use_sfafm if use_sfafm is None else bool(use_sfafm)
+        if apply_sfafm:
+            if not hasattr(self, "img_SFAFM_process"):
+                raise RuntimeError("SFAFM was requested but this model was built without it")
+            x = self._apply_sfafm(x, self.img_size // self.patch_size)
+        x = self.norm(x)
+        return x[:, 0]
 
 
 

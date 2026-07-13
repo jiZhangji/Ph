@@ -109,6 +109,8 @@ def get_args_parser():
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
                         help='resume from checkpoint')
+    parser.add_argument('--init_checkpoint', default='',
+                        help='load model weights only and start a fresh optimizer/schedule')
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
@@ -131,6 +133,9 @@ def get_args_parser():
     parser.add_argument('--sasgt_temperature', default=1.0, type=float)
     parser.add_argument('--sasgt_gamma', default=1.0, type=float)
     parser.add_argument('--sasgt_reliability_window', default=7, type=int)
+    parser.add_argument('--use_sfafm', action='store_true',
+                        help='insert SFAFM after the final encoder block')
+    parser.add_argument('--sfafm_reduction', default=4, type=int)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -219,7 +224,45 @@ def main(args):
         sasgt_temperature=args.sasgt_temperature,
         sasgt_gamma=args.sasgt_gamma,
         sasgt_reliability_window=args.sasgt_reliability_window,
+        use_sfafm=args.use_sfafm,
+        sfafm_reduction=args.sfafm_reduction,
     )
+
+    if args.resume and args.init_checkpoint:
+        raise ValueError('--resume and --init_checkpoint cannot be used together')
+
+    if args.init_checkpoint:
+        checkpoint = torch.load(args.init_checkpoint, map_location='cpu')
+        checkpoint_model = checkpoint.get('model', checkpoint)
+        checkpoint_model = {
+            key.removeprefix('module.'): value
+            for key, value in checkpoint_model.items()
+        }
+        incompatible = model.load_state_dict(checkpoint_model, strict=False)
+        allowed_missing_prefixes = ('img_SFAFM_process.',)
+        disallowed_missing = [
+            key for key in incompatible.missing_keys
+            if not key.startswith(allowed_missing_prefixes)
+        ]
+        if disallowed_missing or incompatible.unexpected_keys:
+            raise RuntimeError(
+                'Unsafe model-only initialization: '
+                f'disallowed missing keys={disallowed_missing}, '
+                f'unexpected keys={incompatible.unexpected_keys}'
+            )
+        missing_sfafm = any(
+            key.startswith('img_SFAFM_process.')
+            for key in incompatible.missing_keys
+        )
+        if args.use_sfafm and missing_sfafm:
+            print(
+                'Initialized the existing model weights from '
+                f'{args.init_checkpoint}; new SFAFM parameters keep identity initialization.'
+            )
+        elif args.use_sfafm:
+            print('SFAFM weights were present in the initialization checkpoint.')
+        else:
+            print(f'Initialized model weights from {args.init_checkpoint}.')
 
     model.to(device)
 

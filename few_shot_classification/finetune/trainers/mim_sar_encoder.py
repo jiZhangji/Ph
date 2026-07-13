@@ -7,7 +7,7 @@ import torch.nn as nn
 
 
 _ROOT = Path(__file__).resolve().parents[3]
-_PRETRAINING = _ROOT / "Pretraining"
+_PRETRAINING = _ROOT / "Pretraining_sarjepa_official_phyd"
 if str(_PRETRAINING) not in sys.path:
     sys.path.insert(0, str(_PRETRAINING))
 
@@ -83,17 +83,17 @@ def load_pretrained_backbone(backbone, checkpoint_path):
         print(f"WARNING missing non-pretrain keys: {missing[:40]}")
     if unexpected:
         print(f"WARNING unexpected non-pretrain keys: {unexpected[:40]}")
-    if sfafm_matched == 0:
+    if getattr(backbone, "use_sfafm", False) and sfafm_matched == 0:
         print("WARNING: img_SFAFM_process was not loaded; downstream is not using the full pretrained encoder.")
 
 
 class SARPretrainClassifier(nn.Module):
     def __init__(self, num_classes, checkpoint_path=None, linear_probe=False):
         super().__init__()
-        self.backbone = models_lomar.mae_vit_base_patch16()
-        self.head = nn.Linear(768, num_classes)
         self.use_sfafm = os.environ.get("MIM_USE_SFAFM", "1") != "0"
         print(f"Use downstream SFAFM: {self.use_sfafm}")
+        self.backbone = models_lomar.mae_vit_base_patch16(use_sfafm=self.use_sfafm)
+        self.head = nn.Linear(768, num_classes)
 
         if checkpoint_path:
             load_pretrained_backbone(self.backbone, checkpoint_path)
@@ -101,6 +101,11 @@ class SARPretrainClassifier(nn.Module):
         from timm.models.layers import trunc_normal_
         trunc_normal_(self.head.weight, std=2e-5 if not linear_probe else 0.01)
         nn.init.constant_(self.head.bias, 0)
+        if linear_probe:
+            self.head = nn.Sequential(
+                nn.BatchNorm1d(768, affine=False, eps=1e-6),
+                self.head,
+            )
 
         self._disable_pretrain_only_params()
         if linear_probe:
