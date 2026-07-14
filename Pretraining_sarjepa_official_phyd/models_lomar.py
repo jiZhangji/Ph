@@ -482,7 +482,7 @@ class MaskedAutoencoderViT(nn.Module):
                  target_norm="patch", sasgt_scales=(0.8, 1.6, 3.2, 6.4),
                  sasgt_temperature=1.0, sasgt_gamma=1.0,
                  sasgt_reliability_window=7, use_sfafm=False,
-                 sfafm_reduction=4):
+                 sfafm_reduction=4, sfafm_layout="late"):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -501,8 +501,22 @@ class MaskedAutoencoderViT(nn.Module):
         self.norm = norm_layer(embed_dim)
         self.use_sfafm = bool(use_sfafm)
         self.sfafm_reduction = int(sfafm_reduction)
+        self.sfafm_layout = str(sfafm_layout)
         if self.use_sfafm:
-            self.img_SFAFM_process = SFAFM(embed_dim, reduction=self.sfafm_reduction)
+            if self.sfafm_layout == "late":
+                self.img_SFAFM_process = SFAFM(
+                    embed_dim,
+                    reduction=self.sfafm_reduction,
+                )
+            elif self.sfafm_layout == "every2_end":
+                self.img_SFAFM_processes = nn.ModuleList([
+                    SFAFM(embed_dim, reduction=self.sfafm_reduction)
+                    for _ in range(depth // 2 + 1)
+                ])
+            else:
+                raise ValueError(
+                    f"Unsupported SFAFM layout: {self.sfafm_layout}"
+                )
 
         self.encoder_pred = nn.Linear(embed_dim, decoder_embed_dim, bias=True) # decoder to patch
         self.decoder_blocks = nn.ModuleList([
@@ -740,11 +754,12 @@ class MaskedAutoencoderViT(nn.Module):
         cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
-        # apply Transformer blocks
-        for blk in self.blocks:
-            x = blk(x)
-        if self.use_sfafm:
-            x = self._apply_sfafm(x, window_size)
+        # apply Transformer blocks and the configured SFAFM layout
+        x = self._forward_encoder_blocks(
+            x,
+            grid_size=window_size,
+            apply_sfafm=self.use_sfafm,
+        )
         x = self.norm(x)
 
         x = self.encoder_pred(x)
@@ -763,7 +778,7 @@ class MaskedAutoencoderViT(nn.Module):
 
         return pred_grad, pred_lfst, mask_indices, ids_restore
 
-    def _apply_sfafm(self, x, grid_size):
+    def _apply_sfafm(self, x, grid_size, module=None):
         cls_token, patch_tokens = x[:, :1], x[:, 1:]
         expected_tokens = grid_size * grid_size
         if patch_tokens.shape[1] != expected_tokens:
@@ -775,22 +790,56 @@ class MaskedAutoencoderViT(nn.Module):
         feature_map = patch_tokens.transpose(1, 2).reshape(
             batch, channels, grid_size, grid_size
         )
-        feature_map = self.img_SFAFM_process(feature_map)
+        if module is None:
+            module = self.img_SFAFM_process
+        feature_map = module(feature_map)
         patch_tokens = feature_map.flatten(2).transpose(1, 2)
         return torch.cat((cls_token, patch_tokens), dim=1)
+
+    def _forward_encoder_blocks(self, x, grid_size, apply_sfafm):
+        if not apply_sfafm:
+            for block in self.blocks:
+                x = block(x)
+            return x
+
+        if self.sfafm_layout == "late":
+            for block in self.blocks:
+                x = block(x)
+            return self._apply_sfafm(x, grid_size)
+
+        if self.sfafm_layout == "every2_end":
+            sfafm_index = 0
+            for block_index, block in enumerate(self.blocks):
+                x = block(x)
+                if (block_index + 1) % 2 == 0:
+                    x = self._apply_sfafm(
+                        x,
+                        grid_size,
+                        module=self.img_SFAFM_processes[sfafm_index],
+                    )
+                    sfafm_index += 1
+            x = self._apply_sfafm(
+                x,
+                grid_size,
+                module=self.img_SFAFM_processes[sfafm_index],
+            )
+            return x
+
+        raise ValueError(f"Unsupported SFAFM layout: {self.sfafm_layout}")
 
     def forward_features(self, imgs, use_sfafm=None, feature_pool="cls"):
         """Return a downstream representation from the full encoder grid."""
         x = self.patch_embed(imgs).type(torch.float32)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_token, x), dim=1)
-        for block in self.blocks:
-            x = block(x)
         apply_sfafm = self.use_sfafm if use_sfafm is None else bool(use_sfafm)
-        if apply_sfafm:
-            if not hasattr(self, "img_SFAFM_process"):
-                raise RuntimeError("SFAFM was requested but this model was built without it")
-            x = self._apply_sfafm(x, self.img_size // self.patch_size)
+        if apply_sfafm and not self.use_sfafm:
+            raise RuntimeError("SFAFM was requested but this model was built without it")
+        x = self._forward_encoder_blocks(
+            x,
+            grid_size=self.img_size // self.patch_size,
+            apply_sfafm=apply_sfafm,
+        )
         x = self.norm(x)
         if feature_pool == "cls":
             return x[:, 0]

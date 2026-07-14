@@ -71,9 +71,9 @@ def load_pretrained_backbone(backbone, checkpoint_path):
     missing = [key for key in missing if not _is_pretrain_only_key(key)]
 
     matched = len(loadable)
-    sfafm_matched = sum(key.startswith("img_SFAFM_process.") for key in loadable)
+    sfafm_matched = sum(key.startswith("img_SFAFM_process") for key in loadable)
     sfafm_expected = sum(
-        key.startswith("img_SFAFM_process.") for key in backbone_state
+        key.startswith("img_SFAFM_process") for key in backbone_state
     )
     print(f"Loaded checkpoint: {checkpoint_path}")
     print(f"Matched backbone keys: {matched}")
@@ -97,6 +97,7 @@ class SARPretrainClassifier(nn.Module):
     def __init__(self, num_classes, checkpoint_path=None, linear_probe=False):
         super().__init__()
         self.use_sfafm = os.environ.get("MIM_USE_SFAFM", "1") != "0"
+        self.sfafm_layout = os.environ.get("MIM_SFAFM_LAYOUT", "late")
         self.feature_pool = os.environ.get("MIM_FEATURE_POOL", "cls")
         if self.feature_pool not in {"cls", "patch_mean"}:
             raise ValueError(
@@ -104,8 +105,12 @@ class SARPretrainClassifier(nn.Module):
                 f"got {self.feature_pool!r}"
             )
         print(f"Use downstream SFAFM: {self.use_sfafm}")
+        print(f"Downstream SFAFM layout: {self.sfafm_layout}")
         print(f"Downstream feature pool: {self.feature_pool}")
-        self.backbone = models_lomar.mae_vit_base_patch16(use_sfafm=self.use_sfafm)
+        self.backbone = models_lomar.mae_vit_base_patch16(
+            use_sfafm=self.use_sfafm,
+            sfafm_layout=self.sfafm_layout,
+        )
         self.head = nn.Linear(768, num_classes)
 
         if checkpoint_path:

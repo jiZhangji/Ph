@@ -18,6 +18,11 @@ def get_args():
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch-size", default=1, type=int)
+    parser.add_argument(
+        "--sfafm-layout",
+        default="late",
+        choices=("late", "every2_end"),
+    )
     return parser.parse_args()
 
 
@@ -30,6 +35,7 @@ def main():
         target_norm="image",
         use_sfafm=True,
         sfafm_reduction=4,
+        sfafm_layout=args.sfafm_layout,
     )
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
@@ -41,7 +47,7 @@ def main():
     incompatible = model.load_state_dict(checkpoint_model, strict=False)
     disallowed_missing = [
         key for key in incompatible.missing_keys
-        if not key.startswith("img_SFAFM_process.")
+        if not key.startswith("img_SFAFM_process")
     ]
     if disallowed_missing or incompatible.unexpected_keys:
         raise RuntimeError(
@@ -49,11 +55,17 @@ def main():
             f"unexpected={incompatible.unexpected_keys}"
         )
 
+    if args.sfafm_layout == "late":
+        sfafm_modules = [model.img_SFAFM_process]
+    else:
+        sfafm_modules = list(model.img_SFAFM_processes)
+
     feature_map = torch.randn(2, 768, 7, 7)
     with torch.no_grad():
-        identity_error = (
-            model.img_SFAFM_process(feature_map) - feature_map
-        ).abs().max().item()
+        identity_error = max(
+            (module(feature_map) - feature_map).abs().max().item()
+            for module in sfafm_modules
+        )
     if identity_error != 0.0:
         raise RuntimeError(f"SFAFM is not identity-initialized: {identity_error}")
 
@@ -64,6 +76,8 @@ def main():
 
     print(f"checkpoint={args.checkpoint}")
     print(f"missing_sfafm_keys={len(incompatible.missing_keys)}")
+    print(f"sfafm_layout={args.sfafm_layout}")
+    print(f"sfafm_modules={len(sfafm_modules)}")
     print(f"identity_max_error={identity_error}")
     print(f"features_shape={tuple(features.shape)}")
     print("SFAFM smoke test passed")

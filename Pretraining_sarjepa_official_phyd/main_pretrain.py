@@ -134,8 +134,12 @@ def get_args_parser():
     parser.add_argument('--sasgt_gamma', default=1.0, type=float)
     parser.add_argument('--sasgt_reliability_window', default=7, type=int)
     parser.add_argument('--use_sfafm', action='store_true',
-                        help='insert SFAFM after the final encoder block')
+                        help='enable SFAFM in the encoder')
     parser.add_argument('--sfafm_reduction', default=4, type=int)
+    parser.add_argument('--sfafm_layout', default='late',
+                        choices=['late', 'every2_end'])
+    parser.add_argument('--sfafm_lr_scale', default=1.0, type=float,
+                        help='learning-rate multiplier for SFAFM parameters')
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -226,6 +230,7 @@ def main(args):
         sasgt_reliability_window=args.sasgt_reliability_window,
         use_sfafm=args.use_sfafm,
         sfafm_reduction=args.sfafm_reduction,
+        sfafm_layout=args.sfafm_layout,
     )
 
     if args.resume and args.init_checkpoint:
@@ -239,7 +244,10 @@ def main(args):
             for key, value in checkpoint_model.items()
         }
         incompatible = model.load_state_dict(checkpoint_model, strict=False)
-        allowed_missing_prefixes = ('img_SFAFM_process.',)
+        allowed_missing_prefixes = (
+            'img_SFAFM_process.',
+            'img_SFAFM_processes.',
+        )
         disallowed_missing = [
             key for key in incompatible.missing_keys
             if not key.startswith(allowed_missing_prefixes)
@@ -251,7 +259,7 @@ def main(args):
                 f'unexpected keys={incompatible.unexpected_keys}'
             )
         missing_sfafm = any(
-            key.startswith('img_SFAFM_process.')
+            key.startswith('img_SFAFM_process')
             for key in incompatible.missing_keys
         )
         if args.use_sfafm and missing_sfafm:
@@ -289,7 +297,36 @@ def main(args):
         model_without_ddp = model.module
 
     # following timm: set wd as 0 for bias and norm layers
-    param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
+    if args.sfafm_lr_scale == 1.0:
+        # Preserve the original optimizer grouping for official runs and resumes.
+        param_groups = optim_factory.add_weight_decay(
+            model_without_ddp,
+            args.weight_decay,
+        )
+    else:
+        param_groups_by_name = {}
+        for name, param in model_without_ddp.named_parameters():
+            if not param.requires_grad:
+                continue
+            is_sfafm = name.startswith('img_SFAFM_process')
+            no_decay = param.ndim == 1 or name.endswith('.bias')
+            group_name = f"{'sfafm' if is_sfafm else 'base'}_{'no_decay' if no_decay else 'decay'}"
+            if group_name not in param_groups_by_name:
+                param_groups_by_name[group_name] = {
+                    'params': [],
+                    'weight_decay': 0.0 if no_decay else args.weight_decay,
+                    'lr_scale': args.sfafm_lr_scale if is_sfafm else 1.0,
+                    'group_name': group_name,
+                }
+            param_groups_by_name[group_name]['params'].append(param)
+        param_groups = list(param_groups_by_name.values())
+        print('Optimizer parameter groups:')
+        for group in param_groups:
+            count = sum(param.numel() for param in group['params'])
+            print(
+                f"  {group['group_name']}: params={count:,}, "
+                f"weight_decay={group['weight_decay']}, lr_scale={group['lr_scale']}"
+            )
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     print(optimizer)
     loss_scaler = NativeScaler()
