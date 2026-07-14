@@ -779,8 +779,8 @@ class MaskedAutoencoderViT(nn.Module):
         patch_tokens = feature_map.flatten(2).transpose(1, 2)
         return torch.cat((cls_token, patch_tokens), dim=1)
 
-    def forward_features(self, imgs, use_sfafm=None):
-        """Return the final CLS representation for downstream evaluation."""
+    def forward_features(self, imgs, use_sfafm=None, feature_pool="cls"):
+        """Return a downstream representation from the full encoder grid."""
         x = self.patch_embed(imgs).type(torch.float32)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_token, x), dim=1)
@@ -792,7 +792,11 @@ class MaskedAutoencoderViT(nn.Module):
                 raise RuntimeError("SFAFM was requested but this model was built without it")
             x = self._apply_sfafm(x, self.img_size // self.patch_size)
         x = self.norm(x)
-        return x[:, 0]
+        if feature_pool == "cls":
+            return x[:, 0]
+        if feature_pool == "patch_mean":
+            return x[:, 1:].mean(dim=1)
+        raise ValueError(f"Unsupported downstream feature pool: {feature_pool}")
 
 
 

@@ -72,9 +72,12 @@ def load_pretrained_backbone(backbone, checkpoint_path):
 
     matched = len(loadable)
     sfafm_matched = sum(key.startswith("img_SFAFM_process.") for key in loadable)
+    sfafm_expected = sum(
+        key.startswith("img_SFAFM_process.") for key in backbone_state
+    )
     print(f"Loaded checkpoint: {checkpoint_path}")
     print(f"Matched backbone keys: {matched}")
-    print(f"Matched SFAFM keys: {sfafm_matched}")
+    print(f"Matched SFAFM keys: {sfafm_matched}/{sfafm_expected}")
     if skipped_shape:
         print(f"Skipped shape-mismatched keys: {skipped_shape[:8]}")
     if skipped_head:
@@ -83,15 +86,25 @@ def load_pretrained_backbone(backbone, checkpoint_path):
         print(f"WARNING missing non-pretrain keys: {missing[:40]}")
     if unexpected:
         print(f"WARNING unexpected non-pretrain keys: {unexpected[:40]}")
-    if getattr(backbone, "use_sfafm", False) and sfafm_matched == 0:
-        print("WARNING: img_SFAFM_process was not loaded; downstream is not using the full pretrained encoder.")
+    if getattr(backbone, "use_sfafm", False) and sfafm_matched != sfafm_expected:
+        raise RuntimeError(
+            "SFAFM checkpoint mismatch: "
+            f"loaded {sfafm_matched}/{sfafm_expected} SFAFM tensors"
+        )
 
 
 class SARPretrainClassifier(nn.Module):
     def __init__(self, num_classes, checkpoint_path=None, linear_probe=False):
         super().__init__()
         self.use_sfafm = os.environ.get("MIM_USE_SFAFM", "1") != "0"
+        self.feature_pool = os.environ.get("MIM_FEATURE_POOL", "cls")
+        if self.feature_pool not in {"cls", "patch_mean"}:
+            raise ValueError(
+                "MIM_FEATURE_POOL must be either 'cls' or 'patch_mean', "
+                f"got {self.feature_pool!r}"
+            )
         print(f"Use downstream SFAFM: {self.use_sfafm}")
+        print(f"Downstream feature pool: {self.feature_pool}")
         self.backbone = models_lomar.mae_vit_base_patch16(use_sfafm=self.use_sfafm)
         self.head = nn.Linear(768, num_classes)
 
@@ -118,5 +131,9 @@ class SARPretrainClassifier(nn.Module):
                 param.requires_grad = False
 
     def forward(self, image):
-        features = self.backbone.forward_features(image, use_sfafm=self.use_sfafm)
+        features = self.backbone.forward_features(
+            image,
+            use_sfafm=self.use_sfafm,
+            feature_pool=self.feature_pool,
+        )
         return self.head(features)

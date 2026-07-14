@@ -25,6 +25,7 @@ LR="${LR:-}"
 EPOCHS="${EPOCHS:-}"
 BATCH_SIZE="${BATCH_SIZE:-}"
 USE_SFAFM="${USE_SFAFM:-0}"
+FEATURE_POOL="${FEATURE_POOL:-cls}"
 
 if [[ ! -d "$FINETUNE_DIR" ]]; then
   echo "Missing $FINETUNE_DIR"
@@ -130,6 +131,7 @@ CHECKPOINT="$(cd "$(dirname "$CHECKPOINT")" && pwd)/$(basename "$CHECKPOINT")"
 OUTPUT_DIR="$(mkdir -p "$OUTPUT_DIR" && cd "$OUTPUT_DIR" && pwd)"
 export MIM_CKPT="$CHECKPOINT"
 export MIM_USE_SFAFM="$USE_SFAFM"
+export MIM_FEATURE_POOL="$FEATURE_POOL"
 
 cd "$FINETUNE_DIR"
 
