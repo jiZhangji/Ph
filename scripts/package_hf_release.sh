@@ -8,6 +8,7 @@ PACKAGE_DIR="${PACKAGE_DIR:-$ROOT/hf_release/phyd-sar-release}"
 INCLUDE_FULL_CHECKPOINTS="${INCLUDE_FULL_CHECKPOINTS:-0}"
 INCLUDE_FULL_RUNS="${INCLUDE_FULL_RUNS:-0}"
 FULL_RUN_ARCHIVE_FORMAT="${FULL_RUN_ARCHIVE_FORMAT:-directory}"
+RUN_CHECKPOINT_POLICY="${RUN_CHECKPOINT_POLICY:-all}"
 INCLUDE_MODEL_ONLY="${INCLUDE_MODEL_ONLY:-1}"
 INCLUDE_RAW_LOGS="${INCLUDE_RAW_LOGS:-0}"
 INCLUDE_HISTORICAL="${INCLUDE_HISTORICAL:-0}"
@@ -24,6 +25,7 @@ fi
 if [[ "$INCLUDE_FULL_RUNS" == "1" ]]; then
   args+=(--include-full-runs)
   args+=(--full-run-archive-format "$FULL_RUN_ARCHIVE_FORMAT")
+  args+=(--run-checkpoint-policy "$RUN_CHECKPOINT_POLICY")
 fi
 if [[ "$INCLUDE_MODEL_ONLY" == "0" ]]; then
   args+=(--skip-model-only)

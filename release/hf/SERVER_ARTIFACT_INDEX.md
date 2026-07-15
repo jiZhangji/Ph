@@ -107,3 +107,28 @@ bash scripts/package_hf_release.sh
 ```
 
 This creates `run_archives/<run-name>.zip` and separate ZIP files for raw downstream result directories. ZIP entries use store mode rather than recompressing PyTorch checkpoints, so packaging is fast and the archive size remains close to the source size.
+
+For a much smaller release, retain only the checkpoint files associated with confirmed results while preserving all non-weight run files:
+
+```bash
+PACKAGE_DIR="$PWD/hf_release/phyd-sar-key-runs-zip" \
+INCLUDE_FULL_RUNS=1 \
+FULL_RUN_ARCHIVE_FORMAT=zip \
+RUN_CHECKPOINT_POLICY=key \
+INCLUDE_MODEL_ONLY=0 \
+INCLUDE_RAW_LOGS=0 \
+INCLUDE_HISTORICAL=0 \
+bash scripts/package_hf_release.sh
+```
+
+Key checkpoint selection:
+
+```text
+best PhyD run: checkpoint-300.pth
+stage-I PhyD run: checkpoint-250.pth
+official SAR-JEPA reproduction: checkpoint-200.pth
+warm-start analysis: checkpoint-220.pth, checkpoint-299.pth
+seven-SFAFM sweep: checkpoint-0.pth, checkpoint-10.pth, checkpoint-20.pth, checkpoint-30.pth
+```
+
+Training logs, TensorBoard events, configuration files, and matching launcher/nohup logs remain included. The confirmed downstream CSV ledger remains included even when `INCLUDE_RAW_LOGS=0`.

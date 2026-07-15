@@ -22,6 +22,7 @@ MODEL_SPECS = [
         "required": True,
         "source": "runs/sarjepa_official_phyd_ft250_bs1024_lfst0p1_image_2xh200/checkpoint-300.pth",
         "destination": "models/main/phyd-best-ckpt300/model.pth",
+        "key_checkpoints": ["checkpoint-300.pth"],
         "configuration": {
             "architecture": "SAR-JEPA official framework with PhyD SASGT and LFST targets",
             "grad_loss_weight": 1.0,
@@ -38,6 +39,7 @@ MODEL_SPECS = [
         "required": False,
         "source": "runs/sarjepa_official_phyd_2xh100/checkpoint-250.pth",
         "destination": "models/reproduction/phyd-stage1-ckpt250/model.pth",
+        "key_checkpoints": ["checkpoint-250.pth"],
         "configuration": {
             "architecture": "SAR-JEPA official framework with PhyD SASGT and LFST targets",
             "grad_loss_weight": 1.0,
@@ -53,6 +55,7 @@ MODEL_SPECS = [
         "required": False,
         "source": "runs/sarjepa_pretrain_2xh100/checkpoint-200.pth",
         "destination": "models/baseline/sarjepa-official-reproduction-ckpt200/model.pth",
+        "key_checkpoints": ["checkpoint-200.pth"],
         "configuration": {
             "architecture": "Official SAR-JEPA local reproduction",
             "sfafm": False,
@@ -65,6 +68,7 @@ MODEL_SPECS = [
         "required": False,
         "source": "runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-299.pth",
         "destination": "models/analysis/phyd-warmstart-drift-ckpt299/model.pth",
+        "key_checkpoints": ["checkpoint-220.pth", "checkpoint-299.pth"],
         "configuration": {
             "architecture": "PhyD model-only warm start from the best checkpoint-300",
             "grad_loss_weight": 1.0,
@@ -81,6 +85,12 @@ MODEL_SPECS = [
         "required": False,
         "source": "runs/phyd_sfafm7_every2end_from_best300_g1_lfst0p1_image_bs768_300e_2xh200/checkpoint-20.pth",
         "destination": "models/experimental/phyd-sfafm7-ckpt20/model.pth",
+        "key_checkpoints": [
+            "checkpoint-0.pth",
+            "checkpoint-10.pth",
+            "checkpoint-20.pth",
+            "checkpoint-30.pth",
+        ],
         "configuration": {
             "architecture": "PhyD with seven SFAFM modules after encoder blocks 2/4/6/8/10/12 and at encoder end",
             "grad_loss_weight": 1.0,
@@ -101,6 +111,7 @@ HISTORICAL_MODEL_SPECS = [
         "required": False,
         "source": "runs/overnight_ablation_8runs_sasgt_only_image/checkpoint-24.pth",
         "destination": "models/historical/legacy-sasgt-image-ckpt24/model.pth",
+        "key_checkpoints": ["checkpoint-24.pth"],
         "configuration": {
             "architecture": "Legacy SASGT-only image-normalized ablation",
             "sfafm": False,
@@ -113,6 +124,7 @@ HISTORICAL_MODEL_SPECS = [
         "required": False,
         "source": "runs/pretrain_2xh100_rerun_bs256_lr1e-4/checkpoint-99.pth",
         "destination": "models/historical/legacy-ph-ckpt99/model.pth",
+        "key_checkpoints": ["checkpoint-99.pth"],
         "configuration": {
             "architecture": "Legacy Ph checkpoint",
             "sfafm": "downstream-only in the recorded test",
@@ -142,6 +154,11 @@ def parse_args() -> argparse.Namespace:
         "--full-run-archive-format",
         choices=("directory", "zip"),
         default="directory",
+    )
+    parser.add_argument(
+        "--run-checkpoint-policy",
+        choices=("all", "key"),
+        default="all",
     )
     parser.add_argument("--skip-model-only", action="store_true")
     parser.add_argument("--include-raw-logs", action="store_true")
@@ -243,11 +260,26 @@ def link_or_copy_file(source: Path, destination: Path) -> str:
         return "copy"
 
 
-def link_or_copy_tree(source: Path, destination: Path) -> dict:
+def is_weight_artifact(path: Path) -> bool:
+    return path.suffix.lower() in {".pth", ".pt", ".ckpt", ".onnx"}
+
+
+def should_include_run_file(path: Path, key_checkpoints: set[str] | None) -> bool:
+    if key_checkpoints is None or not is_weight_artifact(path):
+        return True
+    return path.name in key_checkpoints
+
+
+def link_or_copy_tree(
+    source: Path,
+    destination: Path,
+    key_checkpoints: set[str] | None = None,
+) -> dict:
     linked = 0
     copied = 0
     files = 0
     size_bytes = 0
+    skipped_weight_files = []
     for path in sorted(source.rglob("*")):
         relative = path.relative_to(source)
         target = destination / relative
@@ -259,6 +291,9 @@ def link_or_copy_tree(source: Path, destination: Path) -> dict:
             target.mkdir(parents=True, exist_ok=True)
             continue
         if not path.is_file():
+            continue
+        if not should_include_run_file(path, key_checkpoints):
+            skipped_weight_files.append(path.relative_to(source).as_posix())
             continue
         method = link_or_copy_file(path, target)
         files += 1
@@ -272,6 +307,7 @@ def link_or_copy_tree(source: Path, destination: Path) -> dict:
         "size_bytes": size_bytes,
         "hardlinked_files": linked,
         "copied_files": copied,
+        "skipped_weight_files": skipped_weight_files,
     }
 
 
@@ -296,21 +332,31 @@ def add_tree_to_zip(
     archive: zipfile.ZipFile,
     source: Path,
     archive_root: Path,
-) -> tuple[int, int]:
+    key_checkpoints: set[str] | None = None,
+) -> tuple[int, int, list[str]]:
     files = 0
     size_bytes = 0
+    skipped_weight_files = []
     for path in sorted(source.rglob("*")):
         if not path.is_file():
+            continue
+        if not should_include_run_file(path, key_checkpoints):
+            skipped_weight_files.append(path.relative_to(source).as_posix())
             continue
         relative = path.relative_to(source)
         archive_name = (archive_root / relative).as_posix()
         archive.write(path, archive_name, compress_type=zipfile.ZIP_STORED)
         files += 1
         size_bytes += path.stat().st_size
-    return files, size_bytes
+    return files, size_bytes, skipped_weight_files
 
 
-def archive_run_to_zip(root: Path, run_dir: Path, destination: Path) -> dict:
+def archive_run_to_zip(
+    root: Path,
+    run_dir: Path,
+    destination: Path,
+    key_checkpoints: set[str] | None = None,
+) -> dict:
     destination.parent.mkdir(parents=True, exist_ok=True)
     external_logs = find_external_run_logs(root, run_dir.name)
     with zipfile.ZipFile(
@@ -319,10 +365,11 @@ def archive_run_to_zip(root: Path, run_dir: Path, destination: Path) -> dict:
         compression=zipfile.ZIP_STORED,
         allowZip64=True,
     ) as archive:
-        files, size_bytes = add_tree_to_zip(
+        files, size_bytes, skipped_weight_files = add_tree_to_zip(
             archive,
             run_dir,
             Path("runs") / run_dir.name,
+            key_checkpoints,
         )
         for source in external_logs:
             archive_name = (
@@ -337,6 +384,8 @@ def archive_run_to_zip(root: Path, run_dir: Path, destination: Path) -> dict:
         "archive_size_bytes": destination.stat().st_size,
         "archive_format": "zip-store-zip64",
         "external_logs": [path.relative_to(root).as_posix() for path in external_logs],
+        "included_key_checkpoints": sorted(key_checkpoints or []),
+        "skipped_weight_files": skipped_weight_files,
     }
 
 
@@ -348,7 +397,7 @@ def archive_result_tree_to_zip(source: Path, destination: Path) -> dict:
         compression=zipfile.ZIP_STORED,
         allowZip64=True,
     ) as archive:
-        files, size_bytes = add_tree_to_zip(
+        files, size_bytes, _ = add_tree_to_zip(
             archive,
             source,
             Path("results") / "raw_server_logs" / source.name,
@@ -453,17 +502,29 @@ def main() -> None:
         if args.include_full_runs:
             run_dir = source.parent
             run_relative = run_dir.relative_to(root).as_posix()
+            key_checkpoints = None
+            if args.run_checkpoint_policy == "key":
+                key_checkpoints = set(spec.get("key_checkpoints", [source.name]))
             if run_relative not in packaged_runs:
                 print(f"Packaging complete run: {run_dir}")
                 if args.full_run_archive_format == "zip":
                     run_destination = (
                         package_dir / "run_archives" / f"{run_dir.name}.zip"
                     )
-                    run_details = archive_run_to_zip(root, run_dir, run_destination)
+                    run_details = archive_run_to_zip(
+                        root,
+                        run_dir,
+                        run_destination,
+                        key_checkpoints,
+                    )
                     package_path = run_destination.relative_to(package_dir).as_posix()
                 else:
                     run_destination = package_dir / run_relative
-                    run_details = link_or_copy_tree(run_dir, run_destination)
+                    run_details = link_or_copy_tree(
+                        run_dir,
+                        run_destination,
+                        key_checkpoints,
+                    )
                     run_details["external_logs"] = collect_external_run_logs(
                         root, package_dir, run_dir.name
                     )
@@ -516,6 +577,7 @@ def main() -> None:
             "full_training_checkpoints_included": args.include_full_checkpoints,
             "full_run_directories_included": args.include_full_runs,
             "full_run_archive_format": args.full_run_archive_format,
+            "run_checkpoint_policy": args.run_checkpoint_policy,
             "raw_downstream_logs_included": args.include_raw_logs,
             "historical_models_included": args.include_historical,
             "datasets_included": False,
