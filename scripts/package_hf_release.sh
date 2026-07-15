@@ -6,6 +6,8 @@ cd "$ROOT"
 
 PACKAGE_DIR="${PACKAGE_DIR:-$ROOT/hf_release/phyd-sar-release}"
 INCLUDE_FULL_CHECKPOINTS="${INCLUDE_FULL_CHECKPOINTS:-0}"
+INCLUDE_FULL_RUNS="${INCLUDE_FULL_RUNS:-0}"
+INCLUDE_MODEL_ONLY="${INCLUDE_MODEL_ONLY:-1}"
 INCLUDE_RAW_LOGS="${INCLUDE_RAW_LOGS:-0}"
 INCLUDE_HISTORICAL="${INCLUDE_HISTORICAL:-0}"
 OVERWRITE="${OVERWRITE:-0}"
@@ -17,6 +19,12 @@ args=(
 
 if [[ "$INCLUDE_FULL_CHECKPOINTS" == "1" ]]; then
   args+=(--include-full-checkpoints)
+fi
+if [[ "$INCLUDE_FULL_RUNS" == "1" ]]; then
+  args+=(--include-full-runs)
+fi
+if [[ "$INCLUDE_MODEL_ONLY" == "0" ]]; then
+  args+=(--skip-model-only)
 fi
 if [[ "$INCLUDE_RAW_LOGS" == "1" ]]; then
   args+=(--include-raw-logs)

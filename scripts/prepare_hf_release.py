@@ -136,6 +136,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--package-dir", type=Path, required=True)
     parser.add_argument("--include-full-checkpoints", action="store_true")
+    parser.add_argument("--include-full-runs", action="store_true")
+    parser.add_argument("--skip-model-only", action="store_true")
     parser.add_argument("--include-raw-logs", action="store_true")
     parser.add_argument("--include-historical", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -225,6 +227,63 @@ def copy_full_checkpoint(source: Path, destination: Path) -> None:
         print(f"Copied full checkpoint: {destination}")
 
 
+def link_or_copy_file(source: Path, destination: Path) -> str:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, destination)
+        return "hardlink"
+    except OSError:
+        shutil.copy2(source, destination)
+        return "copy"
+
+
+def link_or_copy_tree(source: Path, destination: Path) -> dict:
+    linked = 0
+    copied = 0
+    files = 0
+    size_bytes = 0
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        target = destination / relative
+        if path.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(os.readlink(path))
+            continue
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if not path.is_file():
+            continue
+        method = link_or_copy_file(path, target)
+        files += 1
+        size_bytes += path.stat().st_size
+        if method == "hardlink":
+            linked += 1
+        else:
+            copied += 1
+    return {
+        "files": files,
+        "size_bytes": size_bytes,
+        "hardlinked_files": linked,
+        "copied_files": copied,
+    }
+
+
+def collect_external_run_logs(root: Path, package_dir: Path, run_name: str) -> list[str]:
+    log_root = root / "logs"
+    if not log_root.is_dir():
+        return []
+    copied = []
+    destination_root = package_dir / "external_logs" / run_name
+    for source in sorted(log_root.glob(f"{run_name}*")):
+        if not source.is_file():
+            continue
+        destination = destination_root / source.name
+        link_or_copy_file(source, destination)
+        copied.append(source.relative_to(root).as_posix())
+    return copied
+
+
 def write_sha256(package_dir: Path) -> None:
     checksum_path = package_dir / "SHA256SUMS"
     rows = []
@@ -272,6 +331,7 @@ def main() -> None:
         specs.extend(HISTORICAL_MODEL_SPECS)
 
     manifest_models = []
+    packaged_runs = {}
     required_missing = []
     for spec in specs:
         source = root / spec["source"]
@@ -286,11 +346,17 @@ def main() -> None:
             manifest_models.append(entry)
             continue
 
-        destination = package_dir / spec["destination"]
-        details = load_and_save_model_only(source, destination, spec)
-        entry.update(details)
         entry["included"] = True
-        entry["package_path"] = spec["destination"]
+        if not args.skip_model_only:
+            destination = package_dir / spec["destination"]
+            details = load_and_save_model_only(source, destination, spec)
+            entry.update(details)
+            entry["package_path"] = spec["destination"]
+            entry["model_only_included"] = True
+        else:
+            entry["epoch"] = None
+            entry["size_bytes"] = source.stat().st_size
+            entry["model_only_included"] = False
 
         if args.include_full_checkpoints:
             full_destination = (
@@ -304,6 +370,21 @@ def main() -> None:
             entry["full_checkpoint_path"] = full_destination.relative_to(
                 package_dir
             ).as_posix()
+
+        if args.include_full_runs:
+            run_dir = source.parent
+            run_relative = run_dir.relative_to(root).as_posix()
+            if run_relative not in packaged_runs:
+                run_destination = package_dir / run_relative
+                print(f"Packaging complete run directory: {run_dir}")
+                run_details = link_or_copy_tree(run_dir, run_destination)
+                run_details["source"] = run_relative
+                run_details["package_path"] = run_relative
+                run_details["external_logs"] = collect_external_run_logs(
+                    root, package_dir, run_dir.name
+                )
+                packaged_runs[run_relative] = run_details
+            entry["full_run_path"] = run_relative
         manifest_models.append(entry)
 
     if required_missing:
@@ -324,13 +405,15 @@ def main() -> None:
         "source_repository": "https://github.com/jiZhangji/Ph",
         "source_git_commit": commit,
         "package_policy": {
-            "model_only_checkpoints": True,
+            "model_only_checkpoints": not args.skip_model_only,
             "full_training_checkpoints_included": args.include_full_checkpoints,
+            "full_run_directories_included": args.include_full_runs,
             "raw_downstream_logs_included": args.include_raw_logs,
             "historical_models_included": args.include_historical,
             "datasets_included": False,
         },
         "models": manifest_models,
+        "run_directories": list(packaged_runs.values()),
         "raw_result_directories": copied_raw_dirs,
         "comparability_warning": (
             "Only results marked strict official downstream are suitable for paper-facing "
@@ -349,9 +432,10 @@ def main() -> None:
     included = [item for item in manifest_models if item["included"]]
     print()
     print(f"Package ready: {package_dir}")
-    print(f"Included model checkpoints: {len(included)}")
+    print(f"Included model entries: {len(included)}")
     for item in included:
-        print(f"  - {item['id']}: {item['package_path']}")
+        package_path = item.get("package_path") or item.get("full_run_path")
+        print(f"  - {item['id']}: {package_path}")
     print("Verify checksums with: sha256sum -c SHA256SUMS")
 
 

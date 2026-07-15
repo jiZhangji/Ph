@@ -64,7 +64,7 @@ Three runs were excluded because their logs did not match the expected checkpoin
 | `phyd-warmstart-drift-ckpt299` | Analysis | Complete 360-run downstream ledger; prolonged warm start reduced transfer on most settings. |
 | `phyd-sfafm7-ckpt20` | Experimental | Seven-SFAFM candidate; only early single-seed evidence is available. |
 
-The exact included files and source paths are recorded in `manifest.json`. By default, files under `models/` are model-only checkpoints and omit optimizer/scaler state.
+The exact included files and source paths are recorded in `manifest.json`. A compact package contains model-only checkpoints under `models/`. A full-run package instead preserves the selected `runs/<run-name>/` directories, including all numbered/last checkpoints, optimizer and scaler states, training logs, TensorBoard event files, and matching launcher logs found under the source repository's `logs/` directory.
 
 ## Loading
 

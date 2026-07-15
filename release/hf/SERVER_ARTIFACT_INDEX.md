@@ -78,3 +78,18 @@ raw_ckpt250_historical_stats.txt
 ```
 
 The main and warm-start CSV files contain per-seed accuracy and macro-F1. Historical checkpoint-250 per-seed macro-F1 was not present in the original output and must not be reconstructed from aggregate values.
+
+## Full Run Packaging
+
+To preserve complete run directories rather than model-only checkpoints, use:
+
+```bash
+PACKAGE_DIR="$PWD/hf_release/phyd-sar-full-runs" \
+INCLUDE_FULL_RUNS=1 \
+INCLUDE_MODEL_ONLY=0 \
+INCLUDE_RAW_LOGS=0 \
+INCLUDE_HISTORICAL=0 \
+bash scripts/package_hf_release.sh
+```
+
+The package keeps each original `runs/<run-name>/` relative path. Files are hard-linked when the package and source are on the same filesystem, falling back to copies when hard links are unavailable. Matching files from `logs/<run-name>*` are placed under `external_logs/<run-name>/`.
