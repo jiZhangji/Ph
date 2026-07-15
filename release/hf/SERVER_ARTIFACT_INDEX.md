@@ -93,3 +93,17 @@ bash scripts/package_hf_release.sh
 ```
 
 The package keeps each original `runs/<run-name>/` relative path. Files are hard-linked when the package and source are on the same filesystem, falling back to copies when hard links are unavailable. Matching files from `logs/<run-name>*` are placed under `external_logs/<run-name>/`.
+
+For faster handling of many log files, create one uncompressed ZIP64 archive per run:
+
+```bash
+PACKAGE_DIR="$PWD/hf_release/phyd-sar-full-runs-zip" \
+INCLUDE_FULL_RUNS=1 \
+FULL_RUN_ARCHIVE_FORMAT=zip \
+INCLUDE_MODEL_ONLY=0 \
+INCLUDE_RAW_LOGS=1 \
+INCLUDE_HISTORICAL=0 \
+bash scripts/package_hf_release.sh
+```
+
+This creates `run_archives/<run-name>.zip` and separate ZIP files for raw downstream result directories. ZIP entries use store mode rather than recompressing PyTorch checkpoints, so packaging is fast and the archive size remains close to the source size.

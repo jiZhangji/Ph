@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -137,6 +138,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--package-dir", type=Path, required=True)
     parser.add_argument("--include-full-checkpoints", action="store_true")
     parser.add_argument("--include-full-runs", action="store_true")
+    parser.add_argument(
+        "--full-run-archive-format",
+        choices=("directory", "zip"),
+        default="directory",
+    )
     parser.add_argument("--skip-model-only", action="store_true")
     parser.add_argument("--include-raw-logs", action="store_true")
     parser.add_argument("--include-historical", action="store_true")
@@ -269,19 +275,92 @@ def link_or_copy_tree(source: Path, destination: Path) -> dict:
     }
 
 
-def collect_external_run_logs(root: Path, package_dir: Path, run_name: str) -> list[str]:
+def find_external_run_logs(root: Path, run_name: str) -> list[Path]:
     log_root = root / "logs"
     if not log_root.is_dir():
         return []
+    return [path for path in sorted(log_root.glob(f"{run_name}*")) if path.is_file()]
+
+
+def collect_external_run_logs(root: Path, package_dir: Path, run_name: str) -> list[str]:
     copied = []
     destination_root = package_dir / "external_logs" / run_name
-    for source in sorted(log_root.glob(f"{run_name}*")):
-        if not source.is_file():
-            continue
+    for source in find_external_run_logs(root, run_name):
         destination = destination_root / source.name
         link_or_copy_file(source, destination)
         copied.append(source.relative_to(root).as_posix())
     return copied
+
+
+def add_tree_to_zip(
+    archive: zipfile.ZipFile,
+    source: Path,
+    archive_root: Path,
+) -> tuple[int, int]:
+    files = 0
+    size_bytes = 0
+    for path in sorted(source.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        archive_name = (archive_root / relative).as_posix()
+        archive.write(path, archive_name, compress_type=zipfile.ZIP_STORED)
+        files += 1
+        size_bytes += path.stat().st_size
+    return files, size_bytes
+
+
+def archive_run_to_zip(root: Path, run_dir: Path, destination: Path) -> dict:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    external_logs = find_external_run_logs(root, run_dir.name)
+    with zipfile.ZipFile(
+        destination,
+        mode="w",
+        compression=zipfile.ZIP_STORED,
+        allowZip64=True,
+    ) as archive:
+        files, size_bytes = add_tree_to_zip(
+            archive,
+            run_dir,
+            Path("runs") / run_dir.name,
+        )
+        for source in external_logs:
+            archive_name = (
+                Path("external_logs") / run_dir.name / source.name
+            ).as_posix()
+            archive.write(source, archive_name, compress_type=zipfile.ZIP_STORED)
+            files += 1
+            size_bytes += source.stat().st_size
+    return {
+        "files": files,
+        "source_size_bytes": size_bytes,
+        "archive_size_bytes": destination.stat().st_size,
+        "archive_format": "zip-store-zip64",
+        "external_logs": [path.relative_to(root).as_posix() for path in external_logs],
+    }
+
+
+def archive_result_tree_to_zip(source: Path, destination: Path) -> dict:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(
+        destination,
+        mode="w",
+        compression=zipfile.ZIP_STORED,
+        allowZip64=True,
+    ) as archive:
+        files, size_bytes = add_tree_to_zip(
+            archive,
+            source,
+            Path("results") / "raw_server_logs" / source.name,
+        )
+    return {
+        "source": source.as_posix(),
+        "package_path": destination.as_posix(),
+        "files": files,
+        "source_size_bytes": size_bytes,
+        "archive_size_bytes": destination.stat().st_size,
+        "archive_format": "zip-store-zip64",
+    }
 
 
 def write_sha256(package_dir: Path) -> None:
@@ -375,16 +454,25 @@ def main() -> None:
             run_dir = source.parent
             run_relative = run_dir.relative_to(root).as_posix()
             if run_relative not in packaged_runs:
-                run_destination = package_dir / run_relative
-                print(f"Packaging complete run directory: {run_dir}")
-                run_details = link_or_copy_tree(run_dir, run_destination)
+                print(f"Packaging complete run: {run_dir}")
+                if args.full_run_archive_format == "zip":
+                    run_destination = (
+                        package_dir / "run_archives" / f"{run_dir.name}.zip"
+                    )
+                    run_details = archive_run_to_zip(root, run_dir, run_destination)
+                    package_path = run_destination.relative_to(package_dir).as_posix()
+                else:
+                    run_destination = package_dir / run_relative
+                    run_details = link_or_copy_tree(run_dir, run_destination)
+                    run_details["external_logs"] = collect_external_run_logs(
+                        root, package_dir, run_dir.name
+                    )
+                    run_details["archive_format"] = "directory"
+                    package_path = run_relative
                 run_details["source"] = run_relative
-                run_details["package_path"] = run_relative
-                run_details["external_logs"] = collect_external_run_logs(
-                    root, package_dir, run_dir.name
-                )
+                run_details["package_path"] = package_path
                 packaged_runs[run_relative] = run_details
-            entry["full_run_path"] = run_relative
+            entry["full_run_path"] = packaged_runs[run_relative]["package_path"]
         manifest_models.append(entry)
 
     if required_missing:
@@ -392,12 +480,31 @@ def main() -> None:
 
     copied_raw_dirs = []
     if args.include_raw_logs:
-        raw_root = package_dir / "results" / "raw_server_logs"
         for relative in RAW_RESULT_DIRS:
             source = root / relative
-            destination = raw_root / Path(relative).name
-            if copy_tree_if_present(source, destination, "raw result directory"):
-                copied_raw_dirs.append(relative)
+            if not source.exists():
+                print(f"WARNING: missing raw result directory: {source}", file=sys.stderr)
+                continue
+            if args.full_run_archive_format == "zip":
+                destination = (
+                    package_dir / "result_archives" / f"{source.name}.zip"
+                )
+                details = archive_result_tree_to_zip(source, destination)
+                details["source"] = relative
+                details["package_path"] = destination.relative_to(package_dir).as_posix()
+                copied_raw_dirs.append(details)
+            else:
+                destination = (
+                    package_dir / "results" / "raw_server_logs" / source.name
+                )
+                if copy_tree_if_present(source, destination, "raw result directory"):
+                    copied_raw_dirs.append(
+                        {
+                            "source": relative,
+                            "package_path": destination.relative_to(package_dir).as_posix(),
+                            "archive_format": "directory",
+                        }
+                    )
 
     commit = git_commit(root)
     manifest = {
@@ -408,6 +515,7 @@ def main() -> None:
             "model_only_checkpoints": not args.skip_model_only,
             "full_training_checkpoints_included": args.include_full_checkpoints,
             "full_run_directories_included": args.include_full_runs,
+            "full_run_archive_format": args.full_run_archive_format,
             "raw_downstream_logs_included": args.include_raw_logs,
             "historical_models_included": args.include_historical,
             "datasets_included": False,
