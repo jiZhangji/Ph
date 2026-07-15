@@ -1,0 +1,28 @@
+model_id,checkpoint,dataset,protocol,shot,seed,accuracy,macro_f1,pipeline,notes
+sarjepa_official_ckpt200,runs/sarjepa_pretrain_2xh100/checkpoint-200.pth,MSTAR_SOC,finetune,10,0,54.50,53.80,strict_official_style,local official SAR-JEPA reproduction
+sarjepa_official_ckpt200,runs/sarjepa_pretrain_2xh100/checkpoint-200.pth,MSTAR_SOC,finetune,10,1,63.80,61.50,strict_official_style,local official SAR-JEPA reproduction
+sarjepa_official_ckpt200,runs/sarjepa_pretrain_2xh100/checkpoint-200.pth,MSTAR_SOC,finetune,10,2,59.80,58.60,strict_official_style,local official SAR-JEPA reproduction
+sarjepa_official_ckpt200,runs/sarjepa_pretrain_2xh100/checkpoint-200.pth,MSTAR_SOC,finetune,10,3,58.00,57.90,strict_official_style,local official SAR-JEPA reproduction
+sarjepa_official_ckpt200,runs/sarjepa_pretrain_2xh100/checkpoint-200.pth,MSTAR_SOC,finetune,10,4,57.60,55.70,strict_official_style,local official SAR-JEPA reproduction
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,MSTAR_SOC,finetune,10,0,64.90,62.50,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,MSTAR_SOC,finetune,10,1,62.80,59.90,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,MSTAR_SOC,finetune,10,2,62.80,61.20,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,MSTAR_SOC,linear,10,0,51.10,44.80,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,MSTAR_SOC,linear,10,1,50.20,48.30,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,MSTAR_SOC,linear,10,2,48.90,46.10,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,New_FUSAR,finetune,10,0,81.50,68.80,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,New_FUSAR,finetune,10,1,75.80,62.60,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,New_FUSAR,finetune,10,2,83.60,71.20,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,New_FUSAR,linear,10,0,74.40,59.80,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,New_FUSAR,linear,10,1,65.90,54.20,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,New_FUSAR,linear,10,2,77.80,64.10,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,SAR_ACD,finetune,10,0,51.70,51.00,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,SAR_ACD,finetune,10,1,52.90,52.70,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,SAR_ACD,finetune,10,2,53.80,52.90,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,SAR_ACD,linear,10,0,41.70,41.00,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,SAR_ACD,linear,10,1,46.00,43.90,strict_official_style,quick three-seed diagnostic
+phyd_warmstart_ckpt220,runs/sarjepa_official_phyd_warmstart_bestckpt300_bs1088_lfst0p1_image_20260709_174032/checkpoint-220.pth,SAR_ACD,linear,10,2,48.20,46.90,strict_official_style,quick three-seed diagnostic
+phyd_lfst0p2_ckpt321,runs/sarjepa_official_phyd_ft299_bs1024_lfst0p2_2xh200/checkpoint-321.pth,MSTAR_SOC,finetune,10,0,51.30,50.00,legacy_downstream,LFST weight 0.2 continuation
+phyd_lfst0p2_ckpt321,runs/sarjepa_official_phyd_ft299_bs1024_lfst0p2_2xh200/checkpoint-321.pth,MSTAR_SOC,finetune,10,1,51.30,49.50,legacy_downstream,LFST weight 0.2 continuation
+phyd_lfst0p2_ckpt321,runs/sarjepa_official_phyd_ft299_bs1024_lfst0p2_2xh200/checkpoint-321.pth,MSTAR_SOC,finetune,10,2,52.90,48.80,legacy_downstream,LFST weight 0.2 continuation
+phyd_sfafm7_ckpt20,runs/phyd_sfafm7_every2end_from_best300_g1_lfst0p1_image_bs768_300e_2xh200/checkpoint-20.pth,MSTAR_SOC,finetune,10,0,67.50,63.90,strict_official_style,experimental seven-SFAFM early checkpoint

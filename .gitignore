@@ -32,3 +32,4 @@ dataset/*
 !dataset/SARSim/*.png
 weights/
 baselines/
+hf_release/

@@ -1,0 +1,190 @@
+base) [root:or]$ cd /inspire/hdd/global_user/liuxiaotong-253108540242/yanggang/lihao/lh/or/SAR-Generation/Ph
+
+python - <<'PY'
+import re
+import statistics
+from pathlib import Path
+
+output_dir = Path("few_shot_classification/finetune/output_sarjepa_official_phyd_ckpt250_all_20seeds")
+target_ckpt = "sarjepa_official_phyd_2xh100/checkpoint-250.pth"
+
+rows = []
+for log in sorted(output_dir.glob("*/MIM_*/vit_b16_*shots/seed*/log.txt")):
+    text = log.read_text(errors="ignore")
+    if target_ckpt not in text:
+        continue
+
+    parts = log.parts
+    dataset = parts[-5]
+    protocol = parts[-4]
+    shots = int(parts[-3].split("_")[-1].replace("shots", ""))
+PY  print(f"... and {len(missing) - 80} more")rotocol, shots, seed))n rows}(f1s):.2f}, n={len(f1s)}")
+completed runs: 261 / 360
+
+===== MSTAR_SOC | MIM_finetune | 10-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 52.80 51.30 53.10 62.10 53.00 54.30 51.50 52.00 61.10 55.70 47.50 50.40 53.60 55.40 59.60 54.40 47.10 53.00 53.60 49.70
+acc mean=53.56, std=3.82, n=20
+f1  mean=50.72, std=4.14, n=20
+
+===== MSTAR_SOC | MIM_finetune | 20-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 74.40 78.00 70.90 72.50 73.20 69.20 73.80 71.80 76.00 69.90 73.00 74.80 73.40 72.10 75.30 72.50 70.00 70.30 69.40 74.90
+acc mean=72.77, std=2.33, n=20
+f1  mean=70.27, std=2.36, n=20
+
+===== MSTAR_SOC | MIM_finetune | 40-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 82.90 82.10 81.10 82.40 81.70 79.60 84.30 82.40 80.20 82.10 83.20 80.80 77.30 81.90 81.70 83.10 80.10 79.80 81.70 82.80
+acc mean=81.56, std=1.55, n=20
+f1  mean=79.57, std=1.77, n=20
+
+===== MSTAR_SOC | MIM_linear | 10-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 46.50 44.50 44.50 45.50 43.60 41.30 47.70 43.40 47.20 48.30 47.50 46.10 49.10 48.40 48.30 39.90 45.20 44.80 44.90 47.40
+acc mean=45.70, std=2.38, n=20
+f1  mean=44.30, std=2.60, n=20
+
+===== MSTAR_SOC | MIM_linear | 20-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 54.50 56.30 50.80 57.60 58.40 54.50 55.70 52.70 55.90 59.20 55.30 56.50 55.20 54.50 54.30 57.10 55.90 56.70 55.10 52.00
+acc mean=55.41, std=1.99, n=20
+f1  mean=53.66, std=2.24, n=20
+
+===== MSTAR_SOC | MIM_linear | 40-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 60.40 61.30 62.20 63.10 59.50 63.20 61.70 64.00 59.70 61.60 61.10 60.90 61.50 61.90 62.90 63.60 62.10 59.10 59.30 62.80
+acc mean=61.59, std=1.42, n=20
+f1  mean=59.67, std=1.53, n=20
+
+===== New_FUSAR | MIM_finetune | 10-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 75.80 67.10 75.30 73.40 69.90 71.20 71.00 73.00 69.80 76.30 71.00 72.80 73.70 71.80 70.00 66.50 66.50 66.00 70.30 69.30
+acc mean=71.03, std=2.99, n=20
+f1  mean=59.23, std=2.41, n=20
+
+===== New_FUSAR | MIM_finetune | 20-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 79.10 77.10 80.50 79.90 78.60 76.60 80.80 78.40 80.00 79.50 78.80 79.30 79.30 79.80 75.50 75.70 77.60 79.10 76.50 77.40
+acc mean=78.47, std=1.53, n=20
+f1  mean=67.61, std=1.87, n=20
+
+===== New_FUSAR | MIM_finetune | 40-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 80.90 82.40 82.80 79.40 82.40 84.40 83.70 83.90 82.70 83.50 81.80 83.80 83.90 85.20 83.90 82.00 84.00 83.10 81.60 83.60
+acc mean=82.95, std=1.31, n=20
+f1  mean=73.25, std=1.49, n=20
+
+===== New_FUSAR | MIM_linear | 10-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 71.70 68.30 71.50 71.70 69.10 73.00 73.00 72.20 71.80 75.00 71.00 72.40 72.20 70.30 73.10 67.50 68.00 67.30 69.90 74.00
+acc mean=71.15, std=2.14, n=20
+f1  mean=58.43, std=2.05, n=20
+
+===== New_FUSAR | MIM_linear | 20-shot =====
+seeds: 0
+accs : 77.60
+acc mean=77.60, std=0.00, n=1
+f1  mean=66.40, std=0.00, n=1
+
+===== SAR_ACD | MIM_finetune | 10-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 48.80 53.00 45.60 48.80 52.80 52.00 51.10 53.90 53.10 47.10 44.70 45.40 52.00 45.30 50.40 47.20 51.40 48.70 51.70 50.90
+acc mean=49.70, std=2.88, n=20
+f1  mean=49.02, std=3.06, n=20
+
+===== SAR_ACD | MIM_finetune | 20-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 58.60 53.40 62.60 53.60 54.50 61.50 55.40 60.50 61.00 58.00 56.80 55.00 65.10 57.90 55.70 56.70 62.90 56.50 58.20 59.50
+acc mean=58.17, std=3.20, n=20
+f1  mean=56.96, std=3.42, n=20
+
+===== SAR_ACD | MIM_finetune | 40-shot =====
+seeds: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+accs : 72.30 72.20 71.20 69.30 70.10 72.00 73.50 73.20 74.80 72.80 72.20 72.40 73.40 73.50 70.30 70.70 72.90 70.20 73.00 72.60
+acc mean=72.13, std=1.38, n=20
+f1  mean=71.75, std=1.30, n=20
+
+missing runs: 99
+missing: ('New_FUSAR', 'MIM_linear', 20, 1)
+missing: ('New_FUSAR', 'MIM_linear', 20, 2)
+missing: ('New_FUSAR', 'MIM_linear', 20, 3)
+missing: ('New_FUSAR', 'MIM_linear', 20, 4)
+missing: ('New_FUSAR', 'MIM_linear', 20, 5)
+missing: ('New_FUSAR', 'MIM_linear', 20, 6)
+missing: ('New_FUSAR', 'MIM_linear', 20, 7)
+missing: ('New_FUSAR', 'MIM_linear', 20, 8)
+missing: ('New_FUSAR', 'MIM_linear', 20, 9)
+missing: ('New_FUSAR', 'MIM_linear', 20, 10)
+missing: ('New_FUSAR', 'MIM_linear', 20, 11)
+missing: ('New_FUSAR', 'MIM_linear', 20, 12)
+missing: ('New_FUSAR', 'MIM_linear', 20, 13)
+missing: ('New_FUSAR', 'MIM_linear', 20, 14)
+missing: ('New_FUSAR', 'MIM_linear', 20, 15)
+missing: ('New_FUSAR', 'MIM_linear', 20, 16)
+missing: ('New_FUSAR', 'MIM_linear', 20, 17)
+missing: ('New_FUSAR', 'MIM_linear', 20, 18)
+missing: ('New_FUSAR', 'MIM_linear', 20, 19)
+missing: ('New_FUSAR', 'MIM_linear', 40, 0)
+missing: ('New_FUSAR', 'MIM_linear', 40, 1)
+missing: ('New_FUSAR', 'MIM_linear', 40, 2)
+missing: ('New_FUSAR', 'MIM_linear', 40, 3)
+missing: ('New_FUSAR', 'MIM_linear', 40, 4)
+missing: ('New_FUSAR', 'MIM_linear', 40, 5)
+missing: ('New_FUSAR', 'MIM_linear', 40, 6)
+missing: ('New_FUSAR', 'MIM_linear', 40, 7)
+missing: ('New_FUSAR', 'MIM_linear', 40, 8)
+missing: ('New_FUSAR', 'MIM_linear', 40, 9)
+missing: ('New_FUSAR', 'MIM_linear', 40, 10)
+missing: ('New_FUSAR', 'MIM_linear', 40, 11)
+missing: ('New_FUSAR', 'MIM_linear', 40, 12)
+missing: ('New_FUSAR', 'MIM_linear', 40, 13)
+missing: ('New_FUSAR', 'MIM_linear', 40, 14)
+missing: ('New_FUSAR', 'MIM_linear', 40, 15)
+missing: ('New_FUSAR', 'MIM_linear', 40, 16)
+missing: ('New_FUSAR', 'MIM_linear', 40, 17)
+missing: ('New_FUSAR', 'MIM_linear', 40, 18)
+missing: ('New_FUSAR', 'MIM_linear', 40, 19)
+missing: ('SAR_ACD', 'MIM_linear', 10, 0)
+missing: ('SAR_ACD', 'MIM_linear', 10, 1)
+missing: ('SAR_ACD', 'MIM_linear', 10, 2)
+missing: ('SAR_ACD', 'MIM_linear', 10, 3)
+missing: ('SAR_ACD', 'MIM_linear', 10, 4)
+missing: ('SAR_ACD', 'MIM_linear', 10, 5)
+missing: ('SAR_ACD', 'MIM_linear', 10, 6)
+missing: ('SAR_ACD', 'MIM_linear', 10, 7)
+missing: ('SAR_ACD', 'MIM_linear', 10, 8)
+missing: ('SAR_ACD', 'MIM_linear', 10, 9)
+missing: ('SAR_ACD', 'MIM_linear', 10, 10)
+missing: ('SAR_ACD', 'MIM_linear', 10, 11)
+missing: ('SAR_ACD', 'MIM_linear', 10, 12)
+missing: ('SAR_ACD', 'MIM_linear', 10, 13)
+missing: ('SAR_ACD', 'MIM_linear', 10, 14)
+missing: ('SAR_ACD', 'MIM_linear', 10, 15)
+missing: ('SAR_ACD', 'MIM_linear', 10, 16)
+missing: ('SAR_ACD', 'MIM_linear', 10, 17)
+missing: ('SAR_ACD', 'MIM_linear', 10, 18)
+missing: ('SAR_ACD', 'MIM_linear', 10, 19)
+missing: ('SAR_ACD', 'MIM_linear', 20, 0)
+missing: ('SAR_ACD', 'MIM_linear', 20, 1)
+missing: ('SAR_ACD', 'MIM_linear', 20, 2)
+missing: ('SAR_ACD', 'MIM_linear', 20, 3)
+missing: ('SAR_ACD', 'MIM_linear', 20, 4)
+missing: ('SAR_ACD', 'MIM_linear', 20, 5)
+missing: ('SAR_ACD', 'MIM_linear', 20, 6)
+missing: ('SAR_ACD', 'MIM_linear', 20, 7)
+missing: ('SAR_ACD', 'MIM_linear', 20, 8)
+missing: ('SAR_ACD', 'MIM_linear', 20, 9)
+missing: ('SAR_ACD', 'MIM_linear', 20, 10)
+missing: ('SAR_ACD', 'MIM_linear', 20, 11)
+missing: ('SAR_ACD', 'MIM_linear', 20, 12)
+missing: ('SAR_ACD', 'MIM_linear', 20, 13)
+missing: ('SAR_ACD', 'MIM_linear', 20, 14)
+missing: ('SAR_ACD', 'MIM_linear', 20, 15)
+missing: ('SAR_ACD', 'MIM_linear', 20, 16)
+missing: ('SAR_ACD', 'MIM_linear', 20, 17)
+missing: ('SAR_ACD', 'MIM_linear', 20, 18)
+missing: ('SAR_ACD', 'MIM_linear', 20, 19)
+missing: ('SAR_ACD', 'MIM_linear', 40, 0)
+... and 19 more
+(base) [root:Ph]$
