@@ -140,6 +140,8 @@ def get_args_parser():
                         choices=['late', 'every2_end'])
     parser.add_argument('--sfafm_lr_scale', default=1.0, type=float,
                         help='learning-rate multiplier for SFAFM parameters')
+    parser.add_argument('--clip_grad', default=None, type=float,
+                        help='clip gradient norm; disabled when omitted')
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
