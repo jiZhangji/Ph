@@ -1,0 +1,8 @@
+model_id,dataset,protocol,shot,accuracy_mean,accuracy_std,n,main_ckpt300_accuracy_mean,accuracy_delta,macro_f1_mean,notes
+phyd_sfafm7_ckpt20,MSTAR_SOC,finetune,10,67.50,0.00,1,70.22,-2.72,63.90,single seed; matched main seed0 is 68.90
+phyd_sfafm7_ckpt20,New_FUSAR,finetune,10,82.17,0.92,3,80.36,1.81,,only seeds 2/3/4 completed
+phyd_sfafm7_ckpt20,New_FUSAR,finetune,20,84.34,0.33,5,82.94,1.40,,complete five-seed result
+phyd_sfafm7_ckpt20,New_FUSAR,finetune,40,87.08,0.35,5,85.88,1.20,,complete five-seed result
+phyd_sfafm7_ckpt20,SAR_ACD,finetune,10,54.02,2.35,5,53.82,0.20,,complete five-seed result
+phyd_sfafm7_ckpt20,SAR_ACD,finetune,20,60.36,1.65,5,61.75,-1.39,,complete five-seed result
+phyd_sfafm7_ckpt20,SAR_ACD,finetune,40,71.36,2.98,5,71.88,-0.52,,complete five-seed result

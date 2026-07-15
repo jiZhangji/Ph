@@ -62,7 +62,9 @@ Three runs were excluded because their logs did not match the expected checkpoin
 | `phyd-stage1-ckpt250` | Reproduction | Stage-I initialization used by the main checkpoint. |
 | `sarjepa-official-reproduction-ckpt200` | Baseline | Local official SAR-JEPA reproduction. |
 | `phyd-warmstart-drift-ckpt299` | Analysis | Complete 360-run downstream ledger; prolonged warm start reduced transfer on most settings. |
-| `phyd-sfafm7-ckpt20` | Experimental | Seven-SFAFM candidate; only early single-seed evidence is available. |
+| `phyd-sfafm7-ckpt20` | Experimental | Seven-SFAFM early checkpoint; five-seed New_FUSAR and SAR_ACD finetune results are available, while MSTAR remains single-seed. |
+
+The SFAFM7 checkpoint-20 has five-seed New_FUSAR finetune results of `84.34 +- 0.33` at 20-shot and `87.08 +- 0.35` at 40-shot, which are `+1.40` and `+1.20` accuracy points above the main checkpoint. It does not improve MSTAR or SAR_ACD consistently, so it remains an experimental domain-specific candidate rather than the recommended model.
 
 The exact included files and source paths are recorded in `manifest.json`. A compact package contains model-only checkpoints under `models/`. A full-run package instead preserves the selected `runs/<run-name>/` directories, including all numbered/last checkpoints, optimizer and scaler states, training logs, TensorBoard event files, and matching launcher logs found under the source repository's `logs/` directory.
 

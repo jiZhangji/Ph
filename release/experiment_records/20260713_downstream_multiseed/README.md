@@ -118,6 +118,8 @@
 - `raw_ckpt250_historical_stats.txt`：历史 checkpoint-250 原始统计输出。
 - `supplementary_selected_checkpoint_results.csv`：官方 SAR-JEPA checkpoint-200、warm-start checkpoint-220、LFST=0.2 checkpoint-321 和 SFAFM7 checkpoint-20 的补充逐 seed 结果。
 - `sfafm7_checkpoint_sweep.csv`：7 个 SFAFM 模块实验从 epoch 0 到 180 的训练损失和 MSTAR 10-shot seed0 checkpoint 扫描；epoch 20 最好，epoch 40 后发生明显退化。
+- `sfafm7_ckpt20_finetune_seed_results.csv`：SFAFM7 checkpoint-20 在 MSTAR、New_FUSAR 和 SAR_ACD 上已确认的逐 seed finetune 准确率；缺失的 macro-F1 保持为空，不做反推。
+- `sfafm7_ckpt20_finetune_aggregate.csv`：checkpoint-20 与主模型 checkpoint-300 的聚合准确率对比。New_FUSAR 20/40-shot 分别提高 1.40/1.20 个百分点，但 MSTAR 和 SAR_ACD 没有形成一致提升，因此仍登记为实验候选。
 
 ## 8. 可比性与论文使用
 

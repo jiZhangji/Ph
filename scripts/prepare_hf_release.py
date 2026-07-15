@@ -99,7 +99,7 @@ MODEL_SPECS = [
             "sfafm": True,
             "sfafm_layout": "every2_end",
         },
-        "result_summary": "Experimental candidate; MSTAR 10-shot finetune seed0 67.50 accuracy and 63.90 macro-F1.",
+        "result_summary": "Experimental candidate; MSTAR 10-shot finetune seed0 67.50 accuracy/63.90 macro-F1, New_FUSAR 20/40-shot finetune 84.34/87.08 accuracy over 5 seeds.",
     },
 ]
 
