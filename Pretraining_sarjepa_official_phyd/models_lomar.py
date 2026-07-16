@@ -270,11 +270,17 @@ class SASGTTarget(nn.Module):
 class LFSTTarget(nn.Module):
     """Low-frequency structural target in spatial patch format."""
 
-    def __init__(self, img_size=224, patch_size=16, cutoff_freq=30):
+    def __init__(self, img_size=224, patch_size=16, cutoff_freq=30,
+                 input_mode="raw"):
         super().__init__()
         self.img_size = img_size
         self.patch_size = patch_size
         self.cutoff_freq = cutoff_freq
+        self.input_mode = str(input_mode)
+        if self.input_mode not in {"raw", "log"}:
+            raise ValueError(
+                f"LFST input_mode must be 'raw' or 'log', got {self.input_mode!r}"
+            )
         mask = self._create_radial_mask(img_size, img_size, cutoff_freq)
         self.register_buffer("mask", mask)
 
@@ -287,7 +293,10 @@ class LFSTTarget(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
-        fft_x = torch.fft.fft2(x.float())
+        source = x.float()
+        if self.input_mode == "log":
+            source = torch.log1p(torch.clamp(source, min=0.0))
+        fft_x = torch.fft.fft2(source)
         fft_shift = torch.fft.fftshift(fft_x, dim=(-2, -1))
         fft_filtered = fft_shift * self.mask.view(1, 1, self.img_size, self.img_size)
         low = torch.fft.ifft2(torch.fft.ifftshift(fft_filtered, dim=(-2, -1))).real
@@ -478,7 +487,8 @@ class MaskedAutoencoderViT(nn.Module):
                  embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False,
-                 lfst_cutoff=30, grad_loss_weight=1.0, lfst_loss_weight=1.0,
+                 lfst_cutoff=30, lfst_input_mode="raw",
+                 grad_loss_weight=1.0, lfst_loss_weight=1.0,
                  target_norm="patch", sasgt_scales=(0.8, 1.6, 3.2, 6.4),
                  sasgt_temperature=1.0, sasgt_gamma=1.0,
                  sasgt_reliability_window=7, use_sfafm=False,
@@ -538,6 +548,7 @@ class MaskedAutoencoderViT(nn.Module):
             img_size=img_size,
             patch_size=patch_size,
             cutoff_freq=lfst_cutoff,
+            input_mode=lfst_input_mode,
         )
         self.grad_loss_weight = float(grad_loss_weight)
         self.lfst_loss_weight = float(lfst_loss_weight)

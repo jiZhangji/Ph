@@ -111,6 +111,8 @@ def get_args_parser():
                         help='resume from checkpoint')
     parser.add_argument('--init_checkpoint', default='',
                         help='load model weights only and start a fresh optimizer/schedule')
+    parser.add_argument('--init_scope', default='full', choices=('full', 'encoder'),
+                        help='load the full pretraining model or encoder weights only')
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
@@ -126,6 +128,7 @@ def get_args_parser():
     parser.add_argument('--mask_ratio', default=0.8, type=float,
                         help='Masking ratio (percentage of removed patches).')
     parser.add_argument('--lfst_cutoff', default=30, type=int)
+    parser.add_argument('--lfst_input_mode', default='raw', choices=('raw', 'log'))
     parser.add_argument('--grad_loss_weight', default=1.0, type=float)
     parser.add_argument('--lfst_loss_weight', default=1.0, type=float)
     parser.add_argument('--target_norm', default='patch', choices=['none', 'patch', 'image'])
@@ -223,6 +226,7 @@ def main(args):
     model = models_lomar.__dict__[args.model](
         norm_pix_loss=args.norm_pix_loss,
         lfst_cutoff=args.lfst_cutoff,
+        lfst_input_mode=args.lfst_input_mode,
         grad_loss_weight=args.grad_loss_weight,
         lfst_loss_weight=args.lfst_loss_weight,
         target_norm=args.target_norm,
@@ -245,34 +249,74 @@ def main(args):
             key.removeprefix('module.'): value
             for key, value in checkpoint_model.items()
         }
-        incompatible = model.load_state_dict(checkpoint_model, strict=False)
-        allowed_missing_prefixes = (
-            'img_SFAFM_process.',
-            'img_SFAFM_processes.',
-        )
-        disallowed_missing = [
-            key for key in incompatible.missing_keys
-            if not key.startswith(allowed_missing_prefixes)
-        ]
-        if disallowed_missing or incompatible.unexpected_keys:
-            raise RuntimeError(
-                'Unsafe model-only initialization: '
-                f'disallowed missing keys={disallowed_missing}, '
-                f'unexpected keys={incompatible.unexpected_keys}'
+        if args.init_scope == 'encoder':
+            encoder_exact_keys = {'cls_token', 'pos_embed'}
+            encoder_prefixes = (
+                'patch_embed.',
+                'blocks.',
+                'norm.',
+                'img_SFAFM_process.',
+                'img_SFAFM_processes.',
             )
-        missing_sfafm = any(
-            key.startswith('img_SFAFM_process')
-            for key in incompatible.missing_keys
-        )
-        if args.use_sfafm and missing_sfafm:
+
+            def is_encoder_key(key):
+                return key in encoder_exact_keys or key.startswith(encoder_prefixes)
+
+            model_state = model.state_dict()
+            expected_encoder = {
+                key for key in model_state if is_encoder_key(key)
+            }
+            loadable_encoder = {
+                key: value for key, value in checkpoint_model.items()
+                if key in expected_encoder
+                and value.shape == model_state[key].shape
+            }
+            missing_encoder = sorted(expected_encoder - loadable_encoder.keys())
+            if missing_encoder:
+                raise RuntimeError(
+                    'Unsafe encoder-only initialization: '
+                    f'missing encoder keys={missing_encoder}'
+                )
+            incompatible = model.load_state_dict(loadable_encoder, strict=False)
+            if incompatible.unexpected_keys:
+                raise RuntimeError(
+                    'Unsafe encoder-only initialization: '
+                    f'unexpected keys={incompatible.unexpected_keys}'
+                )
             print(
-                'Initialized the existing model weights from '
-                f'{args.init_checkpoint}; new SFAFM parameters keep identity initialization.'
+                f'Initialized {len(loadable_encoder)} encoder tensors from '
+                f'{args.init_checkpoint}; decoder, prediction heads, target '
+                'builders, and optimizer remain freshly initialized.'
             )
-        elif args.use_sfafm:
-            print('SFAFM weights were present in the initialization checkpoint.')
         else:
-            print(f'Initialized model weights from {args.init_checkpoint}.')
+            incompatible = model.load_state_dict(checkpoint_model, strict=False)
+            allowed_missing_prefixes = (
+                'img_SFAFM_process.',
+                'img_SFAFM_processes.',
+            )
+            disallowed_missing = [
+                key for key in incompatible.missing_keys
+                if not key.startswith(allowed_missing_prefixes)
+            ]
+            if disallowed_missing or incompatible.unexpected_keys:
+                raise RuntimeError(
+                    'Unsafe model-only initialization: '
+                    f'disallowed missing keys={disallowed_missing}, '
+                    f'unexpected keys={incompatible.unexpected_keys}'
+                )
+            missing_sfafm = any(
+                key.startswith('img_SFAFM_process')
+                for key in incompatible.missing_keys
+            )
+            if args.use_sfafm and missing_sfafm:
+                print(
+                    'Initialized the existing model weights from '
+                    f'{args.init_checkpoint}; new SFAFM parameters keep identity initialization.'
+                )
+            elif args.use_sfafm:
+                print('SFAFM weights were present in the initialization checkpoint.')
+            else:
+                print(f'Initialized model weights from {args.init_checkpoint}.')
 
     model.to(device)
 
