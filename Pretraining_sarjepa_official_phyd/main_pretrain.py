@@ -129,6 +129,8 @@ def get_args_parser():
                         help='Masking ratio (percentage of removed patches).')
     parser.add_argument('--lfst_cutoff', default=30, type=int)
     parser.add_argument('--lfst_input_mode', default='raw', choices=('raw', 'log'))
+    parser.add_argument('--lfst_target_type', default='lfst',
+                        choices=('lfst', 'pixmim_lpf'))
     parser.add_argument('--grad_loss_weight', default=1.0, type=float)
     parser.add_argument('--lfst_loss_weight', default=1.0, type=float)
     parser.add_argument('--target_norm', default='patch', choices=['none', 'patch', 'image'])
@@ -227,6 +229,7 @@ def main(args):
         norm_pix_loss=args.norm_pix_loss,
         lfst_cutoff=args.lfst_cutoff,
         lfst_input_mode=args.lfst_input_mode,
+        lfst_target_type=args.lfst_target_type,
         grad_loss_weight=args.grad_loss_weight,
         lfst_loss_weight=args.lfst_loss_weight,
         target_norm=args.target_norm,

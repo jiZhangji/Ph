@@ -305,6 +305,35 @@ class LFSTTarget(nn.Module):
         return (low - low_min) / (low_max - low_min + 1e-6)
 
 
+class PixMIMLPFTarget(nn.Module):
+    """PixMIM-style ideal circular low-pass target for SAR inputs."""
+
+    def __init__(self, img_size=224, cutoff_freq=40):
+        super().__init__()
+        self.img_size = img_size
+        self.cutoff_freq = cutoff_freq
+        mask = self._create_radial_mask(img_size, img_size, cutoff_freq)
+        self.register_buffer("mask", mask)
+
+    @staticmethod
+    def _create_radial_mask(h, w, radius):
+        y, x = torch.meshgrid(torch.arange(h), torch.arange(w), indexing="ij")
+        center_y = (h - 1) / 2.0
+        center_x = (w - 1) / 2.0
+        return (((x - center_x) ** 2 + (y - center_y) ** 2) <= radius ** 2).float()
+
+    @torch.no_grad()
+    def forward(self, x):
+        # The SAR pipeline supplies unnormalized grayscale tensors in [0, 1],
+        # so PixMIM's ImageNet RGB denormalization is intentionally omitted.
+        source = x.float()
+        freq = torch.fft.fftshift(torch.fft.fft2(source), dim=(-2, -1))
+        low = torch.fft.ifft2(
+            freq * self.mask.view(1, 1, self.img_size, self.img_size)
+        )
+        return torch.abs(low)
+
+
 def _mean_channels(x):
     if x.ndim != 4:
         raise ValueError(f"Expected a 4D feature map, got shape {tuple(x.shape)}")
@@ -488,6 +517,7 @@ class MaskedAutoencoderViT(nn.Module):
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False,
                  lfst_cutoff=30, lfst_input_mode="raw",
+                 lfst_target_type="lfst",
                  grad_loss_weight=1.0, lfst_loss_weight=1.0,
                  target_norm="patch", sasgt_scales=(0.8, 1.6, 3.2, 6.4),
                  sasgt_temperature=1.0, sasgt_gamma=1.0,
@@ -544,12 +574,23 @@ class MaskedAutoencoderViT(nn.Module):
             gamma=sasgt_gamma,
             reliability_window=sasgt_reliability_window,
         )
-        self.lfst_builder = LFSTTarget(
-            img_size=img_size,
-            patch_size=patch_size,
-            cutoff_freq=lfst_cutoff,
-            input_mode=lfst_input_mode,
-        )
+        self.lfst_target_type = str(lfst_target_type)
+        if self.lfst_target_type == "lfst":
+            self.lfst_builder = LFSTTarget(
+                img_size=img_size,
+                patch_size=patch_size,
+                cutoff_freq=lfst_cutoff,
+                input_mode=lfst_input_mode,
+            )
+        elif self.lfst_target_type == "pixmim_lpf":
+            self.lfst_builder = PixMIMLPFTarget(
+                img_size=img_size,
+                cutoff_freq=lfst_cutoff,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported LFST target type: {self.lfst_target_type}"
+            )
         self.grad_loss_weight = float(grad_loss_weight)
         self.lfst_loss_weight = float(lfst_loss_weight)
         self.target_norm = str(target_norm)
