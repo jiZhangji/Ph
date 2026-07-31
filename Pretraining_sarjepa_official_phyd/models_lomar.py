@@ -194,16 +194,22 @@ class GF(nn.Module):
 
 
 class SASGTTarget(nn.Module):
-    """Fixed speckle-adaptive two-channel spatial target."""
+    """Fixed two-channel spatial target with controlled ablation modes."""
 
     def __init__(self, scales=(0.8, 1.6, 3.2, 6.4), temperature=1.0,
-                 gamma=1.0, reliability_window=7, eps=1e-6):
+                 gamma=1.0, reliability_window=7, mode="complete", eps=1e-6):
         super().__init__()
         self.scales = tuple(float(s) for s in scales)
         self.temperature = float(temperature)
         self.gamma = float(gamma)
         self.reliability_window = int(reliability_window)
+        self.mode = str(mode)
         self.eps = float(eps)
+        if self.mode not in {"uniform", "adaptive", "complete"}:
+            raise ValueError(
+                "SASGT mode must be 'uniform', 'adaptive', or 'complete', "
+                f"got {self.mode!r}"
+            )
 
         for index, sigma in enumerate(self.scales):
             radius = max(2, int(math.ceil(3.0 * sigma)))
@@ -257,13 +263,21 @@ class SASGTTarget(nn.Module):
 
         magnitude_stack = torch.cat(magnitudes, dim=1)
         score_stack = torch.cat(scores, dim=1)
-        weights = torch.softmax(score_stack / self.temperature, dim=1)
-        adaptive_gradient = (weights * magnitude_stack).sum(dim=1, keepdim=True)
-        dominant_scale = (
-            weights * self.log_scales.view(1, -1, 1, 1)
-        ).sum(dim=1, keepdim=True)
+        if self.mode == "uniform":
+            adaptive_gradient = magnitude_stack.mean(dim=1, keepdim=True)
+            dominant_scale = torch.zeros_like(adaptive_gradient)
+        else:
+            weights = torch.softmax(score_stack / self.temperature, dim=1)
+            adaptive_gradient = (weights * magnitude_stack).sum(dim=1, keepdim=True)
+            if self.mode == "complete":
+                dominant_scale = (
+                    weights * self.log_scales.view(1, -1, 1, 1)
+                ).sum(dim=1, keepdim=True)
+            else:
+                dominant_scale = torch.zeros_like(adaptive_gradient)
         adaptive_gradient = self._standardize(adaptive_gradient, self.eps)
-        dominant_scale = self._standardize(dominant_scale, self.eps)
+        if self.mode == "complete":
+            dominant_scale = self._standardize(dominant_scale, self.eps)
         return torch.cat((adaptive_gradient, dominant_scale), dim=1)
 
 
@@ -521,7 +535,8 @@ class MaskedAutoencoderViT(nn.Module):
                  grad_loss_weight=1.0, lfst_loss_weight=1.0,
                  target_norm="patch", sasgt_scales=(0.8, 1.6, 3.2, 6.4),
                  sasgt_temperature=1.0, sasgt_gamma=1.0,
-                 sasgt_reliability_window=7, use_sfafm=False,
+                 sasgt_reliability_window=7, sasgt_mode="complete",
+                 use_sfafm=False,
                  sfafm_reduction=4, sfafm_layout="late"):
         super().__init__()
 
@@ -573,6 +588,7 @@ class MaskedAutoencoderViT(nn.Module):
             temperature=sasgt_temperature,
             gamma=sasgt_gamma,
             reliability_window=sasgt_reliability_window,
+            mode=sasgt_mode,
         )
         self.lfst_target_type = str(lfst_target_type)
         if self.lfst_target_type == "lfst":

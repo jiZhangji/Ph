@@ -138,6 +138,8 @@ def get_args_parser():
     parser.add_argument('--sasgt_temperature', default=1.0, type=float)
     parser.add_argument('--sasgt_gamma', default=1.0, type=float)
     parser.add_argument('--sasgt_reliability_window', default=7, type=int)
+    parser.add_argument('--sasgt_mode', default='complete',
+                        choices=('uniform', 'adaptive', 'complete'))
     parser.add_argument('--use_sfafm', action='store_true',
                         help='enable SFAFM in the encoder')
     parser.add_argument('--sfafm_reduction', default=4, type=int)
@@ -237,6 +239,7 @@ def main(args):
         sasgt_temperature=args.sasgt_temperature,
         sasgt_gamma=args.sasgt_gamma,
         sasgt_reliability_window=args.sasgt_reliability_window,
+        sasgt_mode=args.sasgt_mode,
         use_sfafm=args.use_sfafm,
         sfafm_reduction=args.sfafm_reduction,
         sfafm_layout=args.sfafm_layout,

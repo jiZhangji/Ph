@@ -154,11 +154,14 @@ for raw_dataset in $DATASETS; do
     for shots in $SHOTS; do
       for seed in $run_seeds; do
         run_dir="$OUTPUT_DIR/${dataset}/${trainer}/${CFG}_${shots}shots/seed${seed}"
-        if [[ -d "$run_dir" && "$FORCE" != "1" ]]; then
-          echo "Skip existing: $run_dir"
+        result_log="$run_dir/log.txt"
+        if [[ "$FORCE" != "1" && -f "$result_log" ]] \
+            && grep -qE '^\* accuracy:' "$result_log"; then
+          echo "Skip completed: $run_dir"
           continue
         fi
-        if [[ -d "$run_dir" && "$FORCE" == "1" ]]; then
+        if [[ -d "$run_dir" ]]; then
+          echo "Remove incomplete or forced run: $run_dir"
           rm -rf "$run_dir"
         fi
 
