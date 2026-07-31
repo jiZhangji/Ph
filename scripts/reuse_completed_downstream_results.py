@@ -13,6 +13,7 @@ EPOCH_RE = re.compile(r"^\s+MAX_EPOCH:\s*([0-9]+)\s*$", re.MULTILINE)
 BATCH_RE = re.compile(r"^\s+BATCH_SIZE:\s*([0-9]+)\s*$", re.MULTILINE)
 SFAFM_RE = re.compile(r"^Use downstream SFAFM:\s*(.+?)\s*$", re.MULTILINE)
 POOL_RE = re.compile(r"^Downstream feature pool:\s*(.+?)\s*$", re.MULTILINE)
+SEED_RE = re.compile(r"^SEED:\s*(-?[0-9]+)\s*$", re.MULTILINE)
 
 
 def parse_args():
@@ -83,6 +84,10 @@ def load_candidates(search_root, output_root, lr, epochs, batch_size):
         if not ACCURACY_RE.search(text):
             continue
         if not matches_configuration(text, lr, epochs, batch_size):
+            continue
+        configured_seeds = [int(value) for value in SEED_RE.findall(text)]
+        path_seed = int(seed[4:])
+        if not configured_seeds or configured_seeds[-1] != path_seed:
             continue
         checkpoint_matches = CHECKPOINT_RE.findall(text)
         if not checkpoint_matches:

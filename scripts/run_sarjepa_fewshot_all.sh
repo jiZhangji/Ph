@@ -156,7 +156,8 @@ for raw_dataset in $DATASETS; do
         run_dir="$OUTPUT_DIR/${dataset}/${trainer}/${CFG}_${shots}shots/seed${seed}"
         result_log="$run_dir/log.txt"
         if [[ "$FORCE" != "1" && -f "$result_log" ]] \
-            && grep -qE '^\* accuracy:' "$result_log"; then
+            && grep -qE '^\* accuracy:' "$result_log" \
+            && grep -qE "^SEED:[[:space:]]*${seed}[[:space:]]*$" "$result_log"; then
           echo "Skip completed: $run_dir"
           continue
         fi

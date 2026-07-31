@@ -58,7 +58,7 @@ def reset_cfg(cfg, args):
     if args.resume:
         cfg.RESUME = args.resume
 
-    if args.seed:
+    if args.seed >= 0:
         cfg.SEED = args.seed
 
     if args.source_domains:
@@ -168,7 +168,7 @@ if __name__ == "__main__":
         help="checkpoint directory (from which the training resumes)",
     )
     parser.add_argument(
-        "--seed", type=int, default=-1, help="only positive value enables a fixed seed"
+        "--seed", type=int, default=-1, help="a non-negative value enables a fixed seed"
     )
     parser.add_argument(
         "--source-domains", type=str, nargs="+", help="source domains for DA/DG"

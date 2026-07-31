@@ -8,6 +8,7 @@ from pathlib import Path
 
 ACCURACY_RE = re.compile(r"^\* accuracy:\s*([0-9.]+)%", re.MULTILINE)
 MACRO_F1_RE = re.compile(r"^\* macro_f1:\s*([0-9.]+)%", re.MULTILINE)
+SEED_RE = re.compile(r"^SEED:\s*(-?[0-9]+)\s*$", re.MULTILINE)
 
 
 def parse_args():
@@ -19,11 +20,18 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_metric(log_path, pattern):
+def parse_result(log_path, expected_seed):
     if not log_path.is_file():
-        return None
-    matches = pattern.findall(log_path.read_text(encoding="utf-8", errors="replace"))
-    return float(matches[-1]) if matches else None
+        return None, None
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    configured_seeds = [int(value) for value in SEED_RE.findall(text)]
+    if not configured_seeds or configured_seeds[-1] != expected_seed:
+        return None, None
+    accuracy_matches = ACCURACY_RE.findall(text)
+    macro_f1_matches = MACRO_F1_RE.findall(text)
+    accuracy = float(accuracy_matches[-1]) if accuracy_matches else None
+    macro_f1 = float(macro_f1_matches[-1]) if macro_f1_matches else None
+    return accuracy, macro_f1
 
 
 def trainer_name(protocol):
@@ -74,8 +82,7 @@ def main():
                             / f"seed{seed}"
                             / "log.txt"
                         )
-                        accuracy = parse_metric(log_path, ACCURACY_RE)
-                        macro_f1 = parse_metric(log_path, MACRO_F1_RE)
+                        accuracy, macro_f1 = parse_result(log_path, int(seed))
                         status = "completed" if accuracy is not None else "missing"
                         if accuracy is not None:
                             completed += 1
