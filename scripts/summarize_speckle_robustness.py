@@ -56,6 +56,7 @@ def main():
 
     per_downstream_seed = defaultdict(list)
     noise_seed_sets = defaultdict(set)
+    seen_evaluations = set()
     for record in records:
         key = (
             record["method"],
@@ -68,9 +69,17 @@ def main():
         accuracy = metric(record, "accuracy")
         if accuracy is None:
             raise ValueError(f"Missing accuracy in {record['log']}")
+        noise_seed = record["noise_seed"]
+        evaluation_key = (*key, None if noise_seed is None else int(noise_seed))
+        if evaluation_key in seen_evaluations:
+            raise ValueError(
+                "Duplicate robustness evaluation for "
+                f"{evaluation_key}; remove stale duplicate logs"
+            )
+        seen_evaluations.add(evaluation_key)
         per_downstream_seed[key].append(accuracy)
-        if record["noise_seed"] is not None:
-            noise_seed_sets[key].add(int(record["noise_seed"]))
+        if noise_seed is not None:
+            noise_seed_sets[key].add(int(noise_seed))
 
     aggregated_noise = {
         key: statistics.fmean(values)
