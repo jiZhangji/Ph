@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $env:HF_XET_HIGH_PERFORMANCE = "0"
+$env:HF_HUB_DISABLE_XET = "1"
 
 $package = (Resolve-Path -LiteralPath $PackageDir).Path
 $required = @(
