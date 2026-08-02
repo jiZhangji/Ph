@@ -18,21 +18,26 @@ fi
 
 case "$profile" in
   4090)
-    assignments=("0:0:0" "0:1:")
+    assignments=("0:0:0" "0:1:" "0:2:" "0:3:")
     ;;
   2h100)
     assignments=(
-      "0:2:1" "0:3:" "0:4:" "0:5:"
-      "1:6:2" "1:7:" "1:8:" "1:9:"
+      "0:4:1" "0:5:2" "0:6:" "0:7:" "0:8:" "0:9:" "0:10:" "0:11:"
+      "1:12:3" "1:13:4" "1:14:" "1:15:" "1:16:" "1:17:" "1:18:" "1:19:"
     )
     ;;
   1h100)
-    assignments=("0:10:3" "0:11:" "0:12:" "0:13:")
+    assignments=(
+      "0:20:5" "0:21:" "0:22:" "0:23:"
+      "0:24:" "0:25:" "0:26:" "0:27:"
+    )
     ;;
   2h200)
     assignments=(
-      "0:14:4" "0:15:5" "0:16:6" "0:17:" "0:18:" "0:19:"
-      "1:20:7" "1:21:8" "1:22:9" "1:23:" "1:24:" "1:25:"
+      "0:28:6" "0:29:7" "0:30:" "0:31:" "0:32:" "0:33:"
+      "0:34:" "0:35:" "0:36:" "0:37:" "0:38:" "0:39:"
+      "1:40:8" "1:41:9" "1:42:" "1:43:" "1:44:" "1:45:"
+      "1:46:" "1:47:" "1:48:" "1:49:" "1:50:" "1:51:"
     )
     ;;
   *)
@@ -63,10 +68,10 @@ for assignment in "${assignments[@]}"; do
   nohup setsid flock -n "$lock_file" \
     env \
       CUDA_VISIBLE_DEVICES="$gpu" \
-      OMP_NUM_THREADS=2 \
-      MKL_NUM_THREADS=2 \
+      OMP_NUM_THREADS=1 \
+      MKL_NUM_THREADS=1 \
       BASELINE_SHARD_ID="$baseline_shard" \
-      BASELINE_NUM_SHARDS=26 \
+      BASELINE_NUM_SHARDS=52 \
       SPECKLE_SHARD_ID="$speckle_shard" \
       SPECKLE_NUM_SHARDS=10 \
       WEIGHTS_ROOT="$WEIGHTS_ROOT" \

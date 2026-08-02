@@ -18,6 +18,7 @@ SPECKLE_RESULTS_PER_LOG = 1 + 4 * 3
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--baseline-only", action="store_true")
     return parser.parse_args()
 
 
@@ -79,6 +80,9 @@ def main() -> int:
         f"{baseline_expected - baseline_total:8} "
         f"({100 * baseline_total / baseline_expected:.1f}%)"
     )
+
+    if args.baseline_only:
+        return 0
 
     print("\nControlled-speckle progress")
     print(f"{'method':12} {'jobs':>10} {'tests':>10}")
