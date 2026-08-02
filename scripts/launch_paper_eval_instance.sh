@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 profile="${1:-${INSTANCE_PROFILE:-}}"
-RUN_SPECKLE="${RUN_SPECKLE:-1}"
+RUN_SPECKLE="${RUN_SPECKLE:-0}"
 if [[ -z "$profile" ]]; then
   echo "Usage: bash scripts/launch_paper_eval_instance.sh {4090|2h100|1h100|2h200}"
   exit 2
