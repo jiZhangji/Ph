@@ -29,6 +29,17 @@ FEATURE_POOL="${FEATURE_POOL:-cls}"
 SFAFM_LAYOUT="${SFAFM_LAYOUT:-late}"
 MODEL_FAMILY="${MODEL_FAMILY:-}"
 COMPLETION_MARKER="${COMPLETION_MARKER:-}"
+NUM_SHARDS="${NUM_SHARDS:-1}"
+SHARD_ID="${SHARD_ID:-0}"
+
+if [[ ! "$NUM_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NUM_SHARDS must be a positive integer, got: $NUM_SHARDS"
+  exit 2
+fi
+if [[ ! "$SHARD_ID" =~ ^[0-9]+$ ]] || (( SHARD_ID >= NUM_SHARDS )); then
+  echo "SHARD_ID must be in [0, $((NUM_SHARDS - 1))], got: $SHARD_ID"
+  exit 2
+fi
 
 if [[ ! -d "$FINETUNE_DIR" ]]; then
   echo "Missing $FINETUNE_DIR"
@@ -140,6 +151,9 @@ export MIM_MODEL_FAMILY="$MODEL_FAMILY"
 
 cd "$FINETUNE_DIR"
 
+job_index=0
+selected_jobs=0
+
 for raw_dataset in $DATASETS; do
   dataset="$(resolve_dataset_name "$raw_dataset")"
   link_dataset "$dataset"
@@ -156,6 +170,13 @@ for raw_dataset in $DATASETS; do
 
     for shots in $SHOTS; do
       for seed in $run_seeds; do
+        current_job=$job_index
+        job_index=$((job_index + 1))
+        if (( current_job % NUM_SHARDS != SHARD_ID )); then
+          continue
+        fi
+        selected_jobs=$((selected_jobs + 1))
+
         run_dir="$OUTPUT_DIR/${dataset}/${trainer}/${CFG}_${shots}shots/seed${seed}"
         result_log="$run_dir/log.txt"
         result_pattern='^\* accuracy:'
@@ -196,6 +217,8 @@ for raw_dataset in $DATASETS; do
     done
   done
 done
+
+echo "Shard complete: shard=$SHARD_ID/$NUM_SHARDS selected=$selected_jobs total=$job_index"
 
 find "$OUTPUT_DIR" -mindepth 3 -maxdepth 3 -type d | sort | while read -r result_dir; do
   python parse_test_res.py "$result_dir" --test-log --keyword accuracy || true
