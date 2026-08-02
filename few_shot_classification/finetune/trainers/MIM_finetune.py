@@ -12,6 +12,7 @@ from dassl.optim import build_optimizer, build_lr_scheduler
 from tqdm import tqdm
 from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
+from trainers.controlled_speckle import ControlledSpeckleEvaluationMixin
 
 _tokenizer = _Tokenizer()
 
@@ -91,6 +92,22 @@ class CustomCLIP(nn.Module):
 
     def __init__(self, cfg, classnames):
         super().__init__()
+        model_family = os.environ.get('MIM_MODEL_FAMILY', '').strip()
+        if model_family:
+            from trainers.mim_sar_encoder import build_sar_classifier
+
+            checkpoint_path = os.environ.get(
+                'MIM_CKPT',
+                '../weights/SAR-JEPA/checkpoint-200.pth',
+            )
+            print(f'Building unified SAR encoder: {model_family}')
+            self.image_encoder = build_sar_classifier(
+                num_classes=len(classnames),
+                checkpoint_path=checkpoint_path,
+                family=model_family,
+                linear_probe=False,
+            ).cuda()
+            return
         use_sfafm = os.environ.get('MIM_USE_SFAFM', '0') != '0'
         if use_sfafm:
             from trainers.mim_sar_encoder import SARPretrainClassifier
@@ -175,7 +192,7 @@ class CustomCLIP(nn.Module):
 
 
 @TRAINER_REGISTRY.register()
-class MIM_finetune(TrainerX):
+class MIM_finetune(ControlledSpeckleEvaluationMixin, TrainerX):
     """ CLIP-Adapter """
 
     def build_model(self):
@@ -277,33 +294,7 @@ class MIM_finetune(TrainerX):
 
     @torch.no_grad()
     def test(self, split=None):
-        """A generic testing pipeline."""
-        self.set_model_mode("eval")
-        self.evaluator.reset()
-
-        if split is None:
-            split = self.cfg.TEST.SPLIT
-
-        if split == "val" and self.val_loader is not None:
-            data_loader = self.val_loader
-        else:
-            split = "test"  # in case val_loader is None
-            data_loader = self.test_loader
-
-        print(f"Evaluate on the *{split}* set")
-
-        for batch_idx, batch in enumerate(tqdm(data_loader)):
-            input, label = self.parse_batch_test(batch)
-            output = self.model(input)
-            self.evaluator.process(output, label)
-
-        results = self.evaluator.evaluate()
-
-        for k, v in results.items():
-            tag = f"{split}/{k}"
-            self.write_scalar(tag, v, self.epoch)
-
-        return list(results.values())[0]
+        return ControlledSpeckleEvaluationMixin.test(self, split)
 
 
     def after_epoch(self):

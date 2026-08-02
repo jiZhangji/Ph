@@ -27,6 +27,8 @@ BATCH_SIZE="${BATCH_SIZE:-}"
 USE_SFAFM="${USE_SFAFM:-0}"
 FEATURE_POOL="${FEATURE_POOL:-cls}"
 SFAFM_LAYOUT="${SFAFM_LAYOUT:-late}"
+MODEL_FAMILY="${MODEL_FAMILY:-}"
+COMPLETION_MARKER="${COMPLETION_MARKER:-}"
 
 if [[ ! -d "$FINETUNE_DIR" ]]; then
   echo "Missing $FINETUNE_DIR"
@@ -134,6 +136,7 @@ export MIM_CKPT="$CHECKPOINT"
 export MIM_USE_SFAFM="$USE_SFAFM"
 export MIM_FEATURE_POOL="$FEATURE_POOL"
 export MIM_SFAFM_LAYOUT="$SFAFM_LAYOUT"
+export MIM_MODEL_FAMILY="$MODEL_FAMILY"
 
 cd "$FINETUNE_DIR"
 
@@ -155,8 +158,12 @@ for raw_dataset in $DATASETS; do
       for seed in $run_seeds; do
         run_dir="$OUTPUT_DIR/${dataset}/${trainer}/${CFG}_${shots}shots/seed${seed}"
         result_log="$run_dir/log.txt"
+        result_pattern='^\* accuracy:'
+        if [[ -n "$COMPLETION_MARKER" ]]; then
+          result_pattern="$COMPLETION_MARKER"
+        fi
         if [[ "$FORCE" != "1" && -f "$result_log" ]] \
-            && grep -qE '^\* accuracy:' "$result_log" \
+            && grep -qE "$result_pattern" "$result_log" \
             && grep -qE "^SEED:[[:space:]]*${seed}[[:space:]]*$" "$result_log"; then
           echo "Skip completed: $run_dir"
           continue

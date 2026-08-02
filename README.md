@@ -379,3 +379,12 @@ Each single run also writes a JSONL log under:
 ```text
 runs/downstream_fewshot_paper/<dataset>/<protocol>/<shot>shot/seed<seed>/log.jsonl
 ```
+
+## 13. Paper baselines and controlled speckle robustness
+
+The unified evaluator for MAE, LoMaR, FG-MAE, I-JEPA, SAR-JEPA, and PhyD-MAE
+is documented in
+[`scripts/README_baseline_and_speckle.md`](scripts/README_baseline_and_speckle.md).
+It includes strict checkpoint coverage auditing, the complete clean few-shot
+runner, deterministic test-only additional-speckle evaluation, and a result
+summarizer that rejects incomplete seed groups.
