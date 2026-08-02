@@ -17,6 +17,9 @@ LR="${LR:-1e-4}"
 EPOCHS="${EPOCHS:-40}"
 BATCH_SIZE="${BATCH_SIZE:-50}"
 FORCE="${FORCE:-0}"
+NUM_SHARDS="${NUM_SHARDS:-1}"
+SHARD_ID="${SHARD_ID:-0}"
+SUMMARIZE="${SUMMARIZE:-1}"
 
 first_checkpoint() {
   local candidate
@@ -79,11 +82,17 @@ for method in $METHODS; do
     COMPLETION_MARKER='SPECKLE_ROBUSTNESS_COMPLETE' \
     MIM_TEST_SPECKLE_LOOKS_LIST="$SPECKLE_LOOKS" \
     MIM_TEST_SPECKLE_NOISE_SEEDS="$NOISE_SEEDS" \
+    NUM_SHARDS="$NUM_SHARDS" \
+    SHARD_ID="$SHARD_ID" \
     bash scripts/run_sarjepa_fewshot_all.sh
 done
 
-python scripts/summarize_speckle_robustness.py \
-  "$OUTPUT_ROOT" \
-  --output "$OUTPUT_ROOT/speckle_robustness_summary.csv"
+if [[ "$SUMMARIZE" == "1" ]]; then
+  expected_downstream_seeds="$(wc -w <<< "$SEEDS" | tr -d ' ')"
+  python scripts/summarize_speckle_robustness.py \
+    "$OUTPUT_ROOT" \
+    --output "$OUTPUT_ROOT/speckle_robustness_summary.csv" \
+    --expected-downstream-seeds "$expected_downstream_seeds"
+fi
 
 echo "All requested controlled-speckle evaluations completed."

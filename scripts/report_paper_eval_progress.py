@@ -11,7 +11,7 @@ from pathlib import Path
 METHODS = ("mae", "lomar", "fg_mae", "i_jepa", "sar_jepa")
 SPECKLE_METHODS = METHODS + ("phyd_mae",)
 BASELINE_EXPECTED_PER_METHOD = 3 * 2 * 3 * 10
-SPECKLE_EXPECTED_PER_METHOD = 10
+SPECKLE_EXPECTED_PER_METHOD = 3 * 10
 SPECKLE_RESULTS_PER_LOG = 1 + 4 * 3
 
 
