@@ -14,6 +14,7 @@ SEEDS="${SEEDS:-0 1 2 3 4}"
 SPECKLE_LOOKS="${SPECKLE_LOOKS:-clean 8 4 2 1}"
 NOISE_SEEDS="${NOISE_SEEDS:-0 1 2}"
 LR="${LR:-1e-4}"
+PHYD_LR="${PHYD_LR:-$LR}"
 EPOCHS="${EPOCHS:-40}"
 BATCH_SIZE="${BATCH_SIZE:-50}"
 FORCE="${FORCE:-0}"
@@ -60,9 +61,15 @@ for method in $METHODS; do
     exit 1
   fi
 
+  method_lr="$LR"
+  if [[ "$method" == "phyd_mae" ]]; then
+    method_lr="$PHYD_LR"
+  fi
+
   echo "============================================================"
   echo "Method: $method"
   echo "Checkpoint: $checkpoint"
+  echo "Downstream learning rate: $method_lr"
   echo "============================================================"
 
   env \
@@ -73,7 +80,7 @@ for method in $METHODS; do
     PROTOCOLS="$PROTOCOLS" \
     SHOTS="$SHOTS" \
     SEEDS="$SEEDS" \
-    LR="$LR" \
+    LR="$method_lr" \
     EPOCHS="$EPOCHS" \
     BATCH_SIZE="$BATCH_SIZE" \
     USE_SFAFM=0 \
@@ -82,6 +89,7 @@ for method in $METHODS; do
     COMPLETION_MARKER='SPECKLE_ROBUSTNESS_COMPLETE' \
     MIM_TEST_SPECKLE_LOOKS_LIST="$SPECKLE_LOOKS" \
     MIM_TEST_SPECKLE_NOISE_SEEDS="$NOISE_SEEDS" \
+    MIM_DOWNSTREAM_LR="$method_lr" \
     NUM_SHARDS="$NUM_SHARDS" \
     SHARD_ID="$SHARD_ID" \
     bash scripts/run_sarjepa_fewshot_all.sh

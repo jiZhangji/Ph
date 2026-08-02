@@ -8,6 +8,9 @@ WEIGHTS_ROOT="${WEIGHTS_ROOT:-$ROOT/weights/sar-ssl-paper-baseline-weights-v1}"
 OUTPUT_ROOT="${SPECKLE_OUTPUT_ROOT:-$ROOT/few_shot_classification/finetune/output_speckle_robustness_10seeds}"
 PHYD_CHECKPOINT="${PHYD_CHECKPOINT:-$ROOT/runs/sarjepa_official_phyd_ft250_bs1024_lfst0p1_image_2xh200/checkpoint-300.pth}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
+SPECKLE_SHOTS="${SPECKLE_SHOTS:-10 20 40}"
+BASELINE_LR="${BASELINE_LR:-1e-4}"
+PHYD_LINEAR_LR="${PHYD_LINEAR_LR:-1e-3}"
 
 if ! command -v flock >/dev/null 2>&1; then
   echo "flock is required to prevent duplicate workers"
@@ -44,11 +47,12 @@ for ((shard = 0; shard < NUM_WORKERS; shard++)); do
       METHODS="mae lomar fg_mae i_jepa sar_jepa phyd_mae" \
       DATASETS="MSTAR_SOC New_FUSAR SAR_ACD" \
       PROTOCOLS="MIM_linear" \
-      SHOTS="20" \
+      SHOTS="$SPECKLE_SHOTS" \
       SEEDS="0 1 2 3 4 5 6 7 8 9" \
       SPECKLE_LOOKS="clean 8 4 2 1" \
       NOISE_SEEDS="0 1 2" \
-      LR=1e-4 \
+      LR="$BASELINE_LR" \
+      PHYD_LR="$PHYD_LINEAR_LR" \
       EPOCHS=40 \
       BATCH_SIZE=50 \
       FORCE=0 \
@@ -64,6 +68,9 @@ done
 
 echo "Started $NUM_WORKERS controlled-speckle workers on GPU 0"
 echo "Datasets: MSTAR_SOC New_FUSAR SAR_ACD"
+echo "Shots: $SPECKLE_SHOTS"
 echo "Seeds: 0 1 2 3 4 5 6 7 8 9"
+echo "Baseline LR: $BASELINE_LR"
+echo "PhyD-MAE LR: $PHYD_LINEAR_LR"
 echo "PID file: $pid_file"
 echo "Completed results are skipped because FORCE=0."
