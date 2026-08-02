@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 profile="${1:-${INSTANCE_PROFILE:-}}"
+RUN_SPECKLE="${RUN_SPECKLE:-0}"
 if [[ -z "$profile" ]]; then
   echo "Usage: bash scripts/launch_paper_eval_instance.sh {4090|2h100|1h100|2h200}"
   exit 2
@@ -51,6 +52,9 @@ pid_file="$ROOT/logs/paper_eval_${profile}.pids"
 
 for assignment in "${assignments[@]}"; do
   IFS=: read -r gpu baseline_shard speckle_shard <<< "$assignment"
+  if [[ "$RUN_SPECKLE" != "1" ]]; then
+    speckle_shard=""
+  fi
   speckle_label="${speckle_shard:-none}"
   name="paper_eval_${profile}_gpu${gpu}_b${baseline_shard}_s${speckle_label}"
   log_file="$ROOT/logs/${name}.log"
@@ -77,4 +81,5 @@ for assignment in "${assignments[@]}"; do
 done
 
 echo "Started ${#assignments[@]} workers for profile=$profile"
+echo "Controlled speckle enabled: $RUN_SPECKLE"
 echo "PID file: $pid_file"
