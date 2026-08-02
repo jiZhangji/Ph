@@ -195,6 +195,13 @@ class IJEPAVisionTransformer:
                 x = self.norm(x)
                 return x.mean(dim=1)
 
+            def forward(self, x):
+                # Newer timm versions expect forward_features() to return a
+                # token sequence and apply their own pooling in forward_head.
+                # I-JEPA has no CLS token, so keep patch-mean pooling here and
+                # call the classifier head directly on every timm version.
+                return self.head(self.forward_features(x))
+
         return PatchMeanVisionTransformer(
             img_size=224,
             patch_size=16,
