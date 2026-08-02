@@ -56,17 +56,35 @@ stronger additional corruption. Noise is derived from the image path and noise
 seed, so every method receives the same realization independent of data-loader
 order. Training images remain clean.
 
-The default robustness experiment trains each downstream model once on clean
-MSTAR 20-shot data with linear probing, then evaluates it at
-`clean/8/4/2/1`, using five downstream seeds and three noise seeds:
+The paper robustness experiment trains the linear probes on clean data from
+MSTAR, FUSAR-Ship, and SAR-ACD at 10/20/40 shots, then evaluates each probe at
+`clean/8/4/2/1`, using ten downstream seeds and three noise seeds. Baselines
+use the shared linear-probe learning rate of `1e-4`; PhyD-MAE uses the `1e-3`
+linear-probe setting associated with its main-table checkpoint:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 \
 WEIGHTS_ROOT=/mnt/data5/zhangji/SAR-JEPA/weights \
 PHYD_CHECKPOINT="$PWD/runs/sarjepa_official_phyd_ft250_bs1024_lfst0p1_image_2xh200/checkpoint-300.pth" \
-bash scripts/run_speckle_robustness.sh
+bash scripts/launch_paper_speckle_4090.sh
 ```
 
 The final CSV contains accuracy, absolute drop from clean accuracy, and
 retention percentage. Incomplete seed groups cause the summarizer to fail
 instead of silently producing a partial table.
+
+For the full paper matrix covering both fine-tuning and linear probing at
+10/20/40 shots, prepare the output once and then launch the matching profile
+on each GPU instance:
+
+```bash
+bash scripts/prepare_paper_speckle_full_output.sh
+bash scripts/launch_paper_speckle_full.sh 4090
+bash scripts/launch_paper_speckle_full.sh 2h100
+bash scripts/launch_paper_speckle_full.sh 1h100
+bash scripts/launch_paper_speckle_full.sh 2h200
+```
+
+The preparation step archives the earlier PhyD-MAE `LR=1e-4` linear pilot.
+The full run uses `LR=1e-4` for fine-tuning and baseline linear probes, and
+`LR=1e-3` for the PhyD-MAE linear probe to match its main-table evaluation.

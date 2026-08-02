@@ -165,6 +165,7 @@ class ControlledSpeckleEvaluationMixin:
                 "dataset": self.cfg.DATASET.NAME,
                 "shots": int(self.cfg.DATASET.NUM_SHOTS),
                 "protocol": self.__class__.__name__,
+                "learning_rate": os.environ.get("MIM_DOWNSTREAM_LR"),
                 "metrics": {key: float(value) for key, value in results.items()},
             }
             print("SPECKLE_RESULT " + json.dumps(payload, sort_keys=True))
