@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -90,6 +91,20 @@ def requested_evaluations():
     return evaluations, True
 
 
+def _feature_head(model):
+    if isinstance(model, torch.nn.DataParallel):
+        model = model.module
+    image_encoder = getattr(model, "image_encoder", None)
+    if image_encoder is None:
+        raise AttributeError("Feature export requires model.image_encoder")
+    if hasattr(image_encoder, "head"):
+        return image_encoder.head
+    backbone = getattr(image_encoder, "backbone", None)
+    if backbone is not None and hasattr(backbone, "head"):
+        return backbone.head
+    raise AttributeError("Unable to locate the downstream classifier head")
+
+
 class ControlledSpeckleEvaluationMixin:
     """Adds repeatable clean/corrupted test passes without retraining."""
 
@@ -127,11 +142,66 @@ class ControlledSpeckleEvaluationMixin:
             split = "test"
             data_loader = self.test_loader
 
+        feature_output = os.environ.get("MIM_FEATURE_OUTPUT", "").strip()
+        export_features = bool(feature_output) and self._active_speckle_looks is None
+        captured_features = []
+        captured_labels = []
+        captured_paths = []
+        hook = None
+        if export_features:
+            def capture_head_input(_module, inputs):
+                features = inputs[0]
+                if features.ndim != 2:
+                    raise RuntimeError(
+                        "Expected BxD penultimate features, got "
+                        f"{tuple(features.shape)}"
+                    )
+                captured_features.append(features.detach().cpu())
+
+            hook = _feature_head(self.model).register_forward_pre_hook(
+                capture_head_input
+            )
+
         print(f"Evaluate on the *{split}* set")
-        for batch in tqdm(data_loader):
-            inputs, labels = self.parse_batch_test(batch)
-            outputs = self.model(inputs)
-            self.evaluator.process(outputs, labels)
+        try:
+            for batch in tqdm(data_loader):
+                inputs, labels = self.parse_batch_test(batch)
+                outputs = self.model(inputs)
+                self.evaluator.process(outputs, labels)
+                if export_features:
+                    captured_labels.append(labels.detach().cpu())
+                    paths = batch.get("impath", [])
+                    captured_paths.extend(str(path) for path in paths)
+        finally:
+            if hook is not None:
+                hook.remove()
+
+        if export_features:
+            output_path = Path(feature_output).expanduser().resolve()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            features = torch.cat(captured_features).numpy()
+            labels = torch.cat(captured_labels).numpy()
+            if captured_paths and len(captured_paths) != len(labels):
+                raise RuntimeError(
+                    "Feature export path count mismatch: "
+                    f"paths={len(captured_paths)} labels={len(labels)}"
+                )
+            np.savez_compressed(
+                output_path,
+                features=features,
+                labels=labels,
+                paths=np.asarray(captured_paths, dtype=str),
+                classnames=np.asarray(self.dm.dataset.classnames, dtype=str),
+                dataset=str(self.cfg.DATASET.NAME),
+                protocol=self.__class__.__name__,
+                shots=int(self.cfg.DATASET.NUM_SHOTS),
+                seed=int(self.cfg.SEED),
+                method=os.environ.get("MIM_MODEL_FAMILY", "unspecified"),
+            )
+            print(
+                f"FEATURE_EXPORT path={output_path} "
+                f"samples={len(labels)} dim={features.shape[1]}"
+            )
 
         results = self.evaluator.evaluate()
         looks_label = format_looks(self._active_speckle_looks)
