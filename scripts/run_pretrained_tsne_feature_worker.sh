@@ -72,6 +72,8 @@ for dataset in "${datasets[@]}"; do
     mkdir -p "$(dirname "$feature_file")"
     env \
       PYTHONUNBUFFERED=1 \
+      SHARD_ID=0 \
+      NUM_SHARDS=1 \
       CHECKPOINT="$checkpoint" \
       OUTPUT_DIR="$RUN_ROOT/$method" \
       MODEL_FAMILY="$method" \
