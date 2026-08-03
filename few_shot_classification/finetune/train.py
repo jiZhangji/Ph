@@ -1,4 +1,5 @@
 import argparse
+import os
 import torch
 
 from dassl.utils import setup_logger, set_random_seed, collect_env_info
@@ -147,6 +148,12 @@ def main(args):
     print("** System info **\n{}\n".format(collect_env_info()))
 
     trainer = build_trainer(cfg)
+
+    if os.environ.get("MIM_FEATURE_ONLY", "").strip() == "1":
+        if not os.environ.get("MIM_FEATURE_OUTPUT", "").strip():
+            raise ValueError("MIM_FEATURE_ONLY=1 requires MIM_FEATURE_OUTPUT")
+        trainer.test()
+        return
 
     if args.eval_only:
         trainer.load_model(args.model_dir, epoch=args.load_epoch)
