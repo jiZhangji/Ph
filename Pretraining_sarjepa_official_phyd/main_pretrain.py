@@ -139,7 +139,13 @@ def get_args_parser():
     parser.add_argument('--sasgt_gamma', default=1.0, type=float)
     parser.add_argument('--sasgt_reliability_window', default=7, type=int)
     parser.add_argument('--sasgt_mode', default='complete',
-                        choices=('uniform', 'adaptive', 'complete'))
+                        choices=('uniform', 'adaptive', 'no_log', 'complete'),
+                        help=(
+                            'uniform: one-channel equal-scale fusion; adaptive: '
+                            'one-channel reliability-weighted gradient; no_log: '
+                            'two-channel SASGT on raw amplitude; complete: full '
+                            'two-channel log-domain SASGT'
+                        ))
     parser.add_argument('--use_sfafm', action='store_true',
                         help='enable SFAFM in the encoder')
     parser.add_argument('--sfafm_reduction', default=4, type=int)

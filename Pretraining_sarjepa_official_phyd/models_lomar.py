@@ -194,7 +194,7 @@ class GF(nn.Module):
 
 
 class SASGTTarget(nn.Module):
-    """Fixed two-channel spatial target with controlled ablation modes."""
+    """Fixed SASGT spatial target with controlled internal ablation modes."""
 
     def __init__(self, scales=(0.8, 1.6, 3.2, 6.4), temperature=1.0,
                  gamma=1.0, reliability_window=7, mode="complete", eps=1e-6):
@@ -205,11 +205,19 @@ class SASGTTarget(nn.Module):
         self.reliability_window = int(reliability_window)
         self.mode = str(mode)
         self.eps = float(eps)
-        if self.mode not in {"uniform", "adaptive", "complete"}:
+        if not self.scales or any(scale <= 0 for scale in self.scales):
+            raise ValueError("SASGT scales must be positive")
+        if self.temperature <= 0:
+            raise ValueError("SASGT temperature must be positive")
+        if self.reliability_window < 3 or self.reliability_window % 2 == 0:
+            raise ValueError("SASGT reliability window must be an odd integer >= 3")
+        if self.mode not in {"uniform", "adaptive", "no_log", "complete"}:
             raise ValueError(
-                "SASGT mode must be 'uniform', 'adaptive', or 'complete', "
+                "SASGT mode must be 'uniform', 'adaptive', 'no_log', or "
+                "'complete', "
                 f"got {self.mode!r}"
             )
+        self.out_channels = 1 if self.mode in {"uniform", "adaptive"} else 2
 
         for index, sigma in enumerate(self.scales):
             radius = max(2, int(math.ceil(3.0 * sigma)))
@@ -242,7 +250,9 @@ class SASGTTarget(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
-        log_x = torch.log1p(torch.clamp(x.float(), min=0.0))
+        target_input = torch.clamp(x.float(), min=0.0)
+        if self.mode != "no_log":
+            target_input = torch.log1p(target_input)
         magnitudes = []
         scores = []
         pool_pad = self.reliability_window // 2
@@ -250,8 +260,8 @@ class SASGTTarget(nn.Module):
         for index, sigma in enumerate(self.scales):
             gaussian = getattr(self, f"gaussian_{index}")
             derivative = getattr(self, f"derivative_{index}")
-            dx = self._separable_filter(log_x, derivative, gaussian)
-            dy = self._separable_filter(log_x, gaussian, derivative)
+            dx = self._separable_filter(target_input, derivative, gaussian)
+            dy = self._separable_filter(target_input, gaussian, derivative)
             magnitude = (sigma ** self.gamma) * torch.sqrt(dx.square() + dy.square() + self.eps)
             local_mean = F.avg_pool2d(magnitude, self.reliability_window, stride=1, padding=pool_pad)
             local_deviation = F.avg_pool2d(
@@ -265,19 +275,17 @@ class SASGTTarget(nn.Module):
         score_stack = torch.cat(scores, dim=1)
         if self.mode == "uniform":
             adaptive_gradient = magnitude_stack.mean(dim=1, keepdim=True)
-            dominant_scale = torch.zeros_like(adaptive_gradient)
         else:
             weights = torch.softmax(score_stack / self.temperature, dim=1)
             adaptive_gradient = (weights * magnitude_stack).sum(dim=1, keepdim=True)
-            if self.mode == "complete":
+            if self.out_channels == 2:
                 dominant_scale = (
                     weights * self.log_scales.view(1, -1, 1, 1)
                 ).sum(dim=1, keepdim=True)
-            else:
-                dominant_scale = torch.zeros_like(adaptive_gradient)
         adaptive_gradient = self._standardize(adaptive_gradient, self.eps)
-        if self.mode == "complete":
-            dominant_scale = self._standardize(dominant_scale, self.eps)
+        if self.out_channels == 1:
+            return adaptive_gradient
+        dominant_scale = self._standardize(dominant_scale, self.eps)
         return torch.cat((adaptive_gradient, dominant_scale), dim=1)
 
 
@@ -579,8 +587,6 @@ class MaskedAutoencoderViT(nn.Module):
             for i in range(decoder_depth)])
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
-        self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size ** 2 * 2, bias=True)
-        self.decoder_pred_lfst = nn.Linear(decoder_embed_dim, patch_size ** 2, bias=True)
 
         # --------------------------------------------------------------------------
         self.sasgt_builder = SASGTTarget(
@@ -590,6 +596,12 @@ class MaskedAutoencoderViT(nn.Module):
             reliability_window=sasgt_reliability_window,
             mode=sasgt_mode,
         )
+        self.decoder_pred = nn.Linear(
+            decoder_embed_dim,
+            patch_size ** 2 * self.sasgt_builder.out_channels,
+            bias=True,
+        )
+        self.decoder_pred_lfst = nn.Linear(decoder_embed_dim, patch_size ** 2, bias=True)
         self.lfst_target_type = str(lfst_target_type)
         if self.lfst_target_type == "lfst":
             self.lfst_builder = LFSTTarget(
@@ -609,6 +621,9 @@ class MaskedAutoencoderViT(nn.Module):
             )
         self.grad_loss_weight = float(grad_loss_weight)
         self.lfst_loss_weight = float(lfst_loss_weight)
+        if self.lfst_loss_weight <= 0:
+            for parameter in self.decoder_pred_lfst.parameters():
+                parameter.requires_grad = False
         self.target_norm = str(target_norm)
 
         # --------------------------------------------------------------------------
@@ -838,11 +853,14 @@ class MaskedAutoencoderViT(nn.Module):
 
         # predictor projection
         pred_grad = self.decoder_pred(x)
-        pred_lfst = self.decoder_pred_lfst(x)
+        pred_lfst = (
+            self.decoder_pred_lfst(x) if self.lfst_loss_weight > 0 else None
+        )
 
         # remove cls token
         pred_grad = pred_grad[:, 1:, :]
-        pred_lfst = pred_lfst[:, 1:, :]
+        if pred_lfst is not None:
+            pred_lfst = pred_lfst[:, 1:, :]
 
         return pred_grad, pred_lfst, mask_indices, ids_restore
 
@@ -979,7 +997,13 @@ class MaskedAutoencoderViT(nn.Module):
     def forward(self, imgs, window_size=7, num_window=4,mask_ratio=0.8):
         pred, pred_lfst, mask_indices, ids_restore = self.forward_encoder(imgs, window_size,num_window,mask_ratio)
         loss_grad, grad_stats = self.forward_loss(imgs, pred, mask_indices,num_window,ids_restore)
-        loss_lfst, lfst_stats = self.forward_loss_lfst(imgs, pred_lfst, mask_indices, num_window, ids_restore)
+        if self.lfst_loss_weight > 0:
+            loss_lfst, lfst_stats = self.forward_loss_lfst(
+                imgs, pred_lfst, mask_indices, num_window, ids_restore
+            )
+        else:
+            loss_lfst = loss_grad.new_zeros(())
+            lfst_stats = {}
         loss_grad_weighted = self.grad_loss_weight * loss_grad
         loss_lfst_weighted = self.lfst_loss_weight * loss_lfst
         loss = loss_grad_weighted + loss_lfst_weighted
