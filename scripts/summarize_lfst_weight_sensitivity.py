@@ -133,6 +133,21 @@ def main():
                         }
                     )
 
+    detail_rows.sort(
+        key=lambda row: (
+            float(row["lfst_weight"]),
+            row["protocol"],
+            int(row["shots"]),
+            int(row["seed"]),
+        )
+    )
+    summary_rows.sort(
+        key=lambda row: (
+            float(row["lfst_weight"]),
+            row["protocol"],
+            int(row["shots"]),
+        )
+    )
     write_csv(root / "results_per_seed.csv", detail_rows)
     write_csv(root / "results_mean_std_max.csv", summary_rows)
 

@@ -10,12 +10,15 @@ case "$ACTION" in
   *) echo "ACTION must be all, pretrain, eval, or summary; got: $ACTION" >&2; exit 2 ;;
 esac
 
-# All branches resume the same stage-I state and run epochs 251--300. This
+# New branches resume the same stage-I state and run epochs 251--300. This
 # keeps initialization, optimizer state, schedule, and target normalization
 # identical while changing only the LFST loss coefficient.
 SOURCE_CHECKPOINT="${SOURCE_CHECKPOINT:-$ROOT/runs/sarjepa_official_phyd_2xh100/checkpoint-250.pth}"
 DATA_PATH="${DATA_PATH:-$ROOT/dataset/modelscope/extracted/Pretraining_dataset}"
-LFST_WEIGHTS="${LFST_WEIGHTS:-0.05 0.1 0.2 0.5 1.0}"
+LFST_WEIGHTS="${LFST_WEIGHTS:-0.05 0.2 0.5 1.0}"
+REFERENCE_LFST_WEIGHT="${REFERENCE_LFST_WEIGHT:-0.1}"
+REFERENCE_CHECKPOINT="${REFERENCE_CHECKPOINT:-$ROOT/runs/sarjepa_official_phyd_ft250_bs1024_lfst0p1_image_2xh200/checkpoint-300.pth}"
+INCLUDE_REFERENCE="${INCLUDE_REFERENCE:-1}"
 
 SUITE_NAME="${SUITE_NAME:-lfst_weight_sensitivity_fusar_10seeds}"
 RUN_ROOT="${RUN_ROOT:-$ROOT/runs}"
@@ -27,7 +30,9 @@ TRAIN_GPUS="${TRAIN_GPUS:-2}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-512}"
 TRAIN_ACCUM_ITER="${TRAIN_ACCUM_ITER:-1}"
 TRAIN_END_EPOCH="${TRAIN_END_EPOCH:-300}"
-TRAIN_TOTAL_EPOCHS="$((TRAIN_END_EPOCH + 1))"
+# Keep the same 420-epoch cosine schedule used to produce the existing 0.1
+# reference checkpoint, but stop immediately after saving epoch 300.
+TRAIN_SCHEDULE_EPOCHS="${TRAIN_SCHEDULE_EPOCHS:-420}"
 TRAIN_BLR="${TRAIN_BLR:-3e-5}"
 TRAIN_WARMUP_EPOCHS="${TRAIN_WARMUP_EPOCHS:-0}"
 TRAIN_NUM_WORKERS="${TRAIN_NUM_WORKERS:-16}"
@@ -89,6 +94,14 @@ PY
       exit 2
     fi
   done
+  if [[ "$INCLUDE_REFERENCE" != "0" && "$INCLUDE_REFERENCE" != "1" ]]; then
+    echo "INCLUDE_REFERENCE must be 0 or 1; got: $INCLUDE_REFERENCE" >&2
+    exit 2
+  fi
+  if [[ "$TRAIN_SCHEDULE_EPOCHS" -le "$TRAIN_END_EPOCH" ]]; then
+    echo "TRAIN_SCHEDULE_EPOCHS must exceed TRAIN_END_EPOCH" >&2
+    exit 2
+  fi
   if [[ "$ACTION" == "all" || "$ACTION" == "pretrain" ]]; then
     if [[ ! -f "$SOURCE_CHECKPOINT" ]]; then
       echo "Missing shared stage-I checkpoint: $SOURCE_CHECKPOINT" >&2
@@ -135,7 +148,7 @@ train_weight() {
     MASTER_PORT="$((MASTER_PORT_BASE + index))" \
     BATCH_SIZE="$TRAIN_BATCH_SIZE" \
     ACCUM_ITER="$TRAIN_ACCUM_ITER" \
-    EPOCHS="$TRAIN_TOTAL_EPOCHS" \
+    EPOCHS="$TRAIN_SCHEDULE_EPOCHS" \
     BLR="$TRAIN_BLR" \
     WARMUP_EPOCHS="$TRAIN_WARMUP_EPOCHS" \
     NUM_WORKERS="$TRAIN_NUM_WORKERS" \
@@ -155,6 +168,7 @@ train_weight() {
     USE_SFAFM=0 \
     SAVE_EVERY_AFTER_EPOCH="$TRAIN_END_EPOCH" \
     SAVE_INTERVAL_AFTER_EPOCH=1 \
+    STOP_AFTER_EPOCH="$TRAIN_END_EPOCH" \
     PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128 \
     bash scripts/run_sarjepa_official_phyd_pretrain_2xh100.sh \
     2>&1 | tee -a "$run_log"
@@ -177,6 +191,12 @@ build_manifest() {
       "$tag" "$weight" "$checkpoint" "New_FUSAR" \
       "$EVAL_PROTOCOLS" "$EVAL_SHOTS" "$EVAL_SEEDS" >> "$manifest"
   done
+  if [[ "$INCLUDE_REFERENCE" == "1" ]]; then
+    tag="lfst_weight_$(weight_tag "$REFERENCE_LFST_WEIGHT")"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$tag" "$REFERENCE_LFST_WEIGHT" "$REFERENCE_CHECKPOINT" "New_FUSAR" \
+      "$EVAL_PROTOCOLS" "$EVAL_SHOTS" "$EVAL_SEEDS" >> "$manifest"
+  fi
   echo "$manifest"
 }
 

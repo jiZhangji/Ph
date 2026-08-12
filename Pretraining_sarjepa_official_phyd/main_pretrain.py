@@ -104,6 +104,8 @@ def get_args_parser():
                         help='if >=0, save numbered checkpoints every save_interval_after_epoch epochs after this epoch')
     parser.add_argument('--save_interval_after_epoch', default=10, type=int,
                         help='numbered checkpoint interval after save_every_after_epoch')
+    parser.add_argument('--stop_after_epoch', default=-1, type=int,
+                        help='stop normally after this zero-based epoch while preserving the full LR schedule')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -428,6 +430,10 @@ def main(args):
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
+
+        if args.stop_after_epoch >= 0 and epoch >= args.stop_after_epoch:
+            print(f"Stop requested after epoch {epoch}")
+            break
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

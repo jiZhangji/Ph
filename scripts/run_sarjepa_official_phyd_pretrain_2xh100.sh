@@ -28,6 +28,7 @@ INIT_CHECKPOINT="${INIT_CHECKPOINT:-}"
 INIT_SCOPE="${INIT_SCOPE:-full}"
 SAVE_EVERY_AFTER_EPOCH="${SAVE_EVERY_AFTER_EPOCH:--1}"
 SAVE_INTERVAL_AFTER_EPOCH="${SAVE_INTERVAL_AFTER_EPOCH:-10}"
+STOP_AFTER_EPOCH="${STOP_AFTER_EPOCH:--1}"
 
 # PhyD-only target/loss switches.
 GRAD_LOSS_WEIGHT="${GRAD_LOSS_WEIGHT:-1.0}"
@@ -75,6 +76,7 @@ echo "INIT_CHECKPOINT=$INIT_CHECKPOINT"
 echo "INIT_SCOPE=$INIT_SCOPE"
 echo "SAVE_EVERY_AFTER_EPOCH=$SAVE_EVERY_AFTER_EPOCH"
 echo "SAVE_INTERVAL_AFTER_EPOCH=$SAVE_INTERVAL_AFTER_EPOCH"
+echo "STOP_AFTER_EPOCH=$STOP_AFTER_EPOCH"
 
 extra_args=()
 if [[ "$USE_SFAFM" == "1" ]]; then
@@ -95,6 +97,7 @@ python -m torch.distributed.launch \
   --log_dir "$LOG_DIR" \
   --save_every_after_epoch "$SAVE_EVERY_AFTER_EPOCH" \
   --save_interval_after_epoch "$SAVE_INTERVAL_AFTER_EPOCH" \
+  --stop_after_epoch "$STOP_AFTER_EPOCH" \
   --device cuda \
   --batch_size "$BATCH_SIZE" \
   --accum_iter "$ACCUM_ITER" \
