@@ -13,7 +13,7 @@ SEED_RE = re.compile(r"^SEED:\s*(-?[0-9]+)\s*$", re.MULTILINE)
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Summarize the FUSAR-Ship LFST-loss-weight sensitivity study."
+        description="Summarize an LFST-loss-weight sensitivity study."
     )
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -151,8 +151,10 @@ def main():
     write_csv(root / "results_per_seed.csv", detail_rows)
     write_csv(root / "results_mean_std_max.csv", summary_rows)
 
+    dataset_names = sorted({row["dataset"] for row in summary_rows})
+    dataset_title = ", ".join(dataset_names)
     lines = [
-        "LFST Loss-Weight Sensitivity on FUSAR-Ship",
+        f"LFST Loss-Weight Sensitivity on {dataset_title}",
         "=" * 76,
         f"Completed downstream runs: {completed}/{expected}",
         "Values are mean +/- sample standard deviation; max is also reported.",

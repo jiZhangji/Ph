@@ -41,6 +41,7 @@ MASTER_PORT_BASE="${MASTER_PORT_BASE:-27831}"
 # Space-separated physical GPU IDs. Downstream jobs are deterministically
 # sharded over these devices after each checkpoint has finished pre-training.
 EVAL_CUDA_DEVICES="${EVAL_CUDA_DEVICES:-0 1}"
+EVAL_DATASETS="${EVAL_DATASETS:-New_FUSAR}"
 EVAL_PROTOCOLS="${EVAL_PROTOCOLS:-MIM_finetune MIM_linear}"
 EVAL_SHOTS="${EVAL_SHOTS:-10 20 40}"
 EVAL_SEEDS="${EVAL_SEEDS:-0 1 2 3 4 5 6 7 8 9}"
@@ -188,13 +189,13 @@ build_manifest() {
     tag="lfst_weight_$(weight_tag "$weight")"
     checkpoint="$(checkpoint_for_weight "$weight")"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$tag" "$weight" "$checkpoint" "New_FUSAR" \
+      "$tag" "$weight" "$checkpoint" "$EVAL_DATASETS" \
       "$EVAL_PROTOCOLS" "$EVAL_SHOTS" "$EVAL_SEEDS" >> "$manifest"
   done
   if [[ "$INCLUDE_REFERENCE" == "1" ]]; then
     tag="lfst_weight_$(weight_tag "$REFERENCE_LFST_WEIGHT")"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$tag" "$REFERENCE_LFST_WEIGHT" "$REFERENCE_CHECKPOINT" "New_FUSAR" \
+      "$tag" "$REFERENCE_LFST_WEIGHT" "$REFERENCE_CHECKPOINT" "$EVAL_DATASETS" \
       "$EVAL_PROTOCOLS" "$EVAL_SHOTS" "$EVAL_SEEDS" >> "$manifest"
   fi
   echo "$manifest"
@@ -240,7 +241,7 @@ evaluate_checkpoint() {
       CUDA_VISIBLE_DEVICES="${devices[$shard]}" \
       CHECKPOINT="$checkpoint" \
       OUTPUT_DIR="$output_dir" \
-      DATASETS=New_FUSAR \
+      DATASETS="$EVAL_DATASETS" \
       PROTOCOLS="$EVAL_PROTOCOLS" \
       SHOTS="$EVAL_SHOTS" \
       SEEDS="$EVAL_SEEDS" \
