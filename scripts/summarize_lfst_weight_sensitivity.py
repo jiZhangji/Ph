@@ -13,7 +13,7 @@ SEED_RE = re.compile(r"^SEED:\s*(-?[0-9]+)\s*$", re.MULTILINE)
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Summarize the FUSAR-Ship LFST-loss-weight sensitivity study."
+        description="Summarize the LFST loss-weight sensitivity study."
     )
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -137,16 +137,16 @@ def main():
     write_csv(root / "results_mean_std_max.csv", summary_rows)
 
     lines = [
-        "LFST Loss-Weight Sensitivity on FUSAR-Ship",
-        "=" * 76,
+        "LFST Loss-Weight Sensitivity",
+        "=" * 96,
         f"Completed downstream runs: {completed}/{expected}",
         "Values are mean +/- sample standard deviation; max is also reported.",
         "",
         (
-            f"{'lambda':>7}  {'protocol':<12} {'shot':>5} {'n':>5} "
+            f"{'lambda':>7}  {'dataset':<12} {'protocol':<12} {'shot':>5} {'n':>5} "
             f"{'accuracy':>17} {'max':>7} {'macro-F1':>17} {'max':>7}"
         ),
-        "-" * 86,
+        "-" * 100,
     ]
     for row in summary_rows:
         accuracy = "missing"
@@ -156,7 +156,8 @@ def main():
         if row["macro_f1_mean"]:
             macro_f1 = f"{row['macro_f1_mean']} +/- {row['macro_f1_sample_std']}"
         lines.append(
-            f"{float(row['lfst_weight']):7.2f}  {row['protocol']:<12} "
+            f"{float(row['lfst_weight']):7.2f}  {row['dataset']:<12} "
+            f"{row['protocol']:<12} "
             f"{int(row['shots']):5d} "
             f"{int(row['completed_seeds']):2d}/{int(row['expected_seeds']):<2d} "
             f"{accuracy:>17} {row['accuracy_max'] or '-':>7} "
