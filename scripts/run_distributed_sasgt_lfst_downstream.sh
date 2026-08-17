@@ -7,8 +7,8 @@ cd "$ROOT"
 
 ACTION="${ACTION:-status}"
 case "$ACTION" in
-  launch|worker|status|summary) ;;
-  *) echo "ACTION must be launch, worker, status, or summary; got: $ACTION" >&2; exit 2 ;;
+  launch|worker|dynamic-launch|dynamic-worker|clear-locks|status|summary) ;;
+  *) echo "ACTION must be launch, worker, dynamic-launch, dynamic-worker, clear-locks, status, or summary; got: $ACTION" >&2; exit 2 ;;
 esac
 
 PROTOCOL="${PROTOCOL:-MIM_finetune}"
@@ -23,6 +23,8 @@ SHARD_OFFSET="${SHARD_OFFSET:-0}"
 GLOBAL_SHARD_ID="${GLOBAL_SHARD_ID:-0}"
 CUDA_DEVICES="${CUDA_DEVICES:-0}"
 HOST_TAG="${HOST_TAG:-$(hostname -s)}"
+WORKER_OFFSET="${WORKER_OFFSET:-0}"
+DYNAMIC_WORKER_ID="${DYNAMIC_WORKER_ID:-0}"
 
 EVAL_SHOTS="${EVAL_SHOTS:-10 20 40}"
 EVAL_SEEDS="${EVAL_SEEDS:-0 1 2 3 4 5 6 7 8 9}"
@@ -35,6 +37,7 @@ LFST_SUITE="${LFST_SUITE:-lfst_weight_sensitivity_official_lr1e3_10seeds}"
 SASGT_OUTPUT="$FINETUNE_DIR/output_${SASGT_SUITE}"
 LFST_OUTPUT="$FINETUNE_DIR/output_${LFST_SUITE}"
 LOG_ROOT="${LOG_ROOT:-$ROOT/logs/distributed_sasgt_lfst_downstream}"
+LOCK_ROOT="${LOCK_ROOT:-$ROOT/few_shot_classification/finetune/.dynamic_sasgt_lfst_locks}"
 
 DATA_ROOT="${DATA_ROOT:-$ROOT/dataset/modelscope/extracted/classification_dataset/few_shot_classification}"
 if [[ ! -d "$DATA_ROOT" ]]; then
@@ -239,6 +242,136 @@ consider_job() {
   run_job "$group" "$tag" "$checkpoint" "$dataset" "$shots" "$seed"
 }
 
+declare -a DYNAMIC_JOBS=()
+CURRENT_LOCK=""
+
+build_dynamic_jobs() {
+  DYNAMIC_JOBS=()
+  local spec tag weight checkpoint dataset shots seed
+  for spec in "${SASGT_SPECS[@]}"; do
+    IFS='|' read -r tag checkpoint <<< "$spec"
+    for shots in $EVAL_SHOTS; do
+      for seed in $EVAL_SEEDS; do
+        DYNAMIC_JOBS+=("sasgt|$tag|$checkpoint|New_FUSAR|$shots|$seed")
+      done
+    done
+  done
+  for spec in "${LFST_SPECS[@]}"; do
+    IFS='|' read -r tag weight checkpoint <<< "$spec"
+    for dataset in New_FUSAR MSTAR_SOC SAR_ACD; do
+      for shots in $EVAL_SHOTS; do
+        for seed in $EVAL_SEEDS; do
+          DYNAMIC_JOBS+=("lfst|$tag|$checkpoint|$dataset|$shots|$seed")
+        done
+      done
+    done
+  done
+}
+
+job_result_log() {
+  local group="$1"
+  local tag="$2"
+  local dataset="$3"
+  local shots="$4"
+  local seed="$5"
+  local output_root
+  if [[ "$group" == sasgt ]]; then
+    output_root="$SASGT_OUTPUT"
+  else
+    output_root="$LFST_OUTPUT"
+  fi
+  dataset="$(resolve_dataset_name "$dataset")"
+  echo "$output_root/$tag/$dataset/$PROTOCOL/vit_b16_${shots}shots/seed${seed}/log.txt"
+}
+
+cleanup_dynamic_lock() {
+  if [[ -n "$CURRENT_LOCK" && -d "$CURRENT_LOCK" ]]; then
+    rm -rf -- "$CURRENT_LOCK"
+  fi
+  CURRENT_LOCK=""
+}
+
+dynamic_signal_exit() {
+  cleanup_dynamic_lock
+  exit 143
+}
+
+try_dynamic_job() {
+  local record="$1"
+  local group tag checkpoint dataset shots seed result_log key lock_dir status
+  IFS='|' read -r group tag checkpoint dataset shots seed <<< "$record"
+  result_log="$(job_result_log "$group" "$tag" "$dataset" "$shots" "$seed")"
+  if is_complete "$result_log" "$seed"; then
+    return 1
+  fi
+
+  key="${group}__${tag}__${dataset}__${PROTOCOL}__${shots}shot__seed${seed}"
+  lock_dir="$LOCK_ROOT/$PROTOCOL/${key}.lock"
+  mkdir -p "$LOCK_ROOT/$PROTOCOL"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    return 1
+  fi
+  CURRENT_LOCK="$lock_dir"
+  printf 'host=%s\npid=%s\nworker=%s\ntime=%s\n' \
+    "$HOST_TAG" "$$" "$DYNAMIC_WORKER_ID" "$(date -Iseconds)" \
+    > "$lock_dir/owner.txt"
+
+  if is_complete "$result_log" "$seed"; then
+    cleanup_dynamic_lock
+    return 1
+  fi
+
+  status=0
+  run_job "$group" "$tag" "$checkpoint" "$dataset" "$shots" "$seed" || status=$?
+  cleanup_dynamic_lock
+  return "$status"
+}
+
+run_dynamic_worker() {
+  validate_integer DYNAMIC_WORKER_ID "$DYNAMIC_WORKER_ID"
+  validate_checkpoints
+  ensure_environment
+  build_dynamic_jobs
+  trap dynamic_signal_exit INT TERM
+  trap cleanup_dynamic_lock EXIT
+
+  local total_jobs="${#DYNAMIC_JOBS[@]}"
+  local iteration=0 start step index claimed remaining status
+  while true; do
+    claimed=0
+    start=$(( (DYNAMIC_WORKER_ID * 97 + iteration * 31) % total_jobs ))
+    for ((step = 0; step < total_jobs; step++)); do
+      index=$(( (start + step) % total_jobs ))
+      if try_dynamic_job "${DYNAMIC_JOBS[$index]}"; then
+        claimed=1
+        break
+      else
+        status=$?
+        if (( status > 1 )); then
+          log "Job failed with status=$status; worker=$DYNAMIC_WORKER_ID will continue with the shared queue"
+        fi
+      fi
+    done
+
+    if (( claimed )); then
+      iteration=$((iteration + 1))
+      continue
+    fi
+
+    if [[ "$PROTOCOL" == MIM_finetune ]]; then
+      remaining=$((660 - $(count_complete "$SASGT_OUTPUT" MIM_finetune) - $(count_complete "$LFST_OUTPUT" MIM_finetune)))
+    else
+      remaining=$((660 - $(count_complete "$SASGT_OUTPUT" MIM_linear) - $(count_complete "$LFST_OUTPUT" MIM_linear)))
+    fi
+    if (( remaining <= 0 )); then
+      log "Dynamic worker complete: protocol=$PROTOCOL worker=$DYNAMIC_WORKER_ID"
+      return
+    fi
+    sleep 10
+    iteration=$((iteration + 1))
+  done
+}
+
 run_worker() {
   validate_shards
   if (( GLOBAL_SHARD_ID >= TOTAL_SHARDS )); then
@@ -326,6 +459,68 @@ launch_workers() {
   log "Host launch complete: protocol=$PROTOCOL host=$HOST_TAG"
 }
 
+launch_dynamic_workers() {
+  local -a devices pids
+  read -r -a devices <<< "$CUDA_DEVICES"
+  if [[ ${#devices[@]} -eq 0 ]]; then
+    echo "CUDA_DEVICES must list at least one device" >&2
+    exit 2
+  fi
+
+  local log_dir="$LOG_ROOT/dynamic-$PROTOCOL/$HOST_TAG"
+  mkdir -p "$log_dir"
+  pids=()
+  local local_id global_id device pid failed=0
+  for local_id in "${!devices[@]}"; do
+    global_id=$((WORKER_OFFSET + local_id))
+    device="${devices[$local_id]}"
+    env \
+      ACTION=dynamic-worker \
+      PROTOCOL="$PROTOCOL" \
+      DYNAMIC_WORKER_ID="$global_id" \
+      CUDA_VISIBLE_DEVICES="$device" \
+      EVAL_LR="$EVAL_LR" \
+      EVAL_EPOCHS="$EVAL_EPOCHS" \
+      EVAL_BATCH_SIZE="$EVAL_BATCH_SIZE" \
+      HOST_TAG="$HOST_TAG" \
+      OMP_NUM_THREADS=1 \
+      MKL_NUM_THREADS=1 \
+      OPENBLAS_NUM_THREADS=1 \
+      bash "$0" \
+      > "$log_dir/worker-${global_id}.log" 2>&1 &
+    pid="$!"
+    pids+=("$pid")
+    log "Started dynamic protocol=$PROTOCOL worker=$global_id GPU=$device PID=$pid"
+  done
+
+  for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+      failed=1
+    fi
+  done
+  if (( failed )); then
+    echo "One or more dynamic workers failed; inspect $log_dir" >&2
+    exit 1
+  fi
+  log "Dynamic host launch complete: protocol=$PROTOCOL host=$HOST_TAG"
+}
+
+clear_dynamic_locks() {
+  local active_pids
+  active_pids="$({
+    ps -eo pid=,args= \
+      | awk -v self="$$" \
+          '$1 != self && $0 ~ /bash .*run_distributed_sasgt_lfst_downstream\.sh/ {print $1}'
+  } || true)"
+  if [[ -n "$active_pids" && "${FORCE_CLEAR_LOCKS:-0}" != 1 ]]; then
+    echo "Refusing to clear locks while local distributed workers are running: $active_pids" >&2
+    echo "Stop workers on every instance first, or set FORCE_CLEAR_LOCKS=1 after verifying they are stopped." >&2
+    exit 1
+  fi
+  rm -rf -- "$LOCK_ROOT/$PROTOCOL"
+  echo "Cleared dynamic locks for $PROTOCOL: $LOCK_ROOT/$PROTOCOL"
+}
+
 count_complete() {
   local root="$1"
   local protocol="$2"
@@ -392,6 +587,9 @@ summarize_all() {
 case "$ACTION" in
   launch) launch_workers ;;
   worker) run_worker ;;
+  dynamic-launch) launch_dynamic_workers ;;
+  dynamic-worker) run_dynamic_worker ;;
+  clear-locks) clear_dynamic_locks ;;
   status) show_status ;;
   summary) summarize_all ;;
 esac
