@@ -33,10 +33,10 @@ TRAIN_NUM_WORKERS="${TRAIN_NUM_WORKERS:-16}"
 MASTER_PORT_BASE="${MASTER_PORT_BASE:-27431}"
 
 # Downstream protocol used by the final paper experiments.
-# Twenty interleaved shards follow the final downstream launcher used in the
-# paper experiments. On two H200 GPUs this starts ten workers per GPU while
-# distributing consecutive jobs across different devices.
-EVAL_CUDA_DEVICES="${EVAL_CUDA_DEVICES:-0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1}"
+# Fine-tuning uses ten workers per H200, while linear probing uses twenty.
+# Consecutive shards are interleaved across the two devices.
+EVAL_FT_CUDA_DEVICES="${EVAL_FT_CUDA_DEVICES:-0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1}"
+EVAL_LP_CUDA_DEVICES="${EVAL_LP_CUDA_DEVICES:-0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1}"
 EVAL_DATASET="${EVAL_DATASET:-New_FUSAR}"
 EVAL_SHOTS="${EVAL_SHOTS:-10 20 40}"
 EVAL_SEEDS="${EVAL_SEEDS:-0 1 2 3 4 5 6 7 8 9}"
@@ -209,9 +209,10 @@ evaluate_checkpoint_protocol() {
   local tag="$1"
   local checkpoint="$2"
   local protocol="$3"
+  local device_list="$4"
   local output_dir="$OUTPUT_ROOT/$tag"
   local -a devices
-  read -r -a devices <<< "$EVAL_CUDA_DEVICES"
+  read -r -a devices <<< "$device_list"
   if [[ ${#devices[@]} -eq 0 ]]; then
     echo "EVAL_CUDA_DEVICES must contain at least one device ID" >&2
     exit 2
@@ -220,7 +221,7 @@ evaluate_checkpoint_protocol() {
   local num_shards="${#devices[@]}"
   local -a pids=()
   local shard pid failed=0
-  log "Evaluate $tag: protocol=$protocol, checkpoint=$checkpoint, lr=$EVAL_LR"
+  log "Evaluate $tag: protocol=$protocol, shards=${#devices[@]}, checkpoint=$checkpoint, lr=$EVAL_LR"
 
   for ((shard = 0; shard < num_shards; shard++)); do
     env \
@@ -261,12 +262,14 @@ evaluate_checkpoint_protocol() {
 
 evaluate_protocol_all() {
   local protocol="$1"
+  local device_list="$2"
   local index
   for index in "${!EVAL_TAGS[@]}"; do
     evaluate_checkpoint_protocol \
       "${EVAL_TAGS[$index]}" \
       "${EVAL_CHECKPOINTS[$index]}" \
-      "$protocol"
+      "$protocol" \
+      "$device_list"
   done
 }
 
@@ -292,7 +295,8 @@ run_lfst_weight_stage() {
     EVAL_LR="$EVAL_LR" \
     EVAL_EPOCHS="$EVAL_EPOCHS" \
     EVAL_BATCH_SIZE="$EVAL_BATCH_SIZE" \
-    EVAL_CUDA_DEVICES="$EVAL_CUDA_DEVICES" \
+    EVAL_FT_CUDA_DEVICES="$EVAL_FT_CUDA_DEVICES" \
+    EVAL_LP_CUDA_DEVICES="$EVAL_LP_CUDA_DEVICES" \
     REUSE_EXISTING_RESULTS=0 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
@@ -321,11 +325,11 @@ if [[ "$ACTION" == "all" || "$ACTION" == "finetune" || "$ACTION" == "linear" || 
 fi
 
 if [[ "$ACTION" == "all" || "$ACTION" == "finetune" || "$ACTION" == "eval" ]]; then
-  evaluate_protocol_all MIM_finetune
+  evaluate_protocol_all MIM_finetune "$EVAL_FT_CUDA_DEVICES"
 fi
 
 if [[ "$ACTION" == "all" || "$ACTION" == "linear" || "$ACTION" == "eval" ]]; then
-  evaluate_protocol_all MIM_linear
+  evaluate_protocol_all MIM_linear "$EVAL_LP_CUDA_DEVICES"
 fi
 
 if [[ "$ACTION" == "all" || "$ACTION" == "eval" || "$ACTION" == "summary" ]]; then

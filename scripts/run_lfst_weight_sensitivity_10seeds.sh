@@ -35,7 +35,8 @@ MASTER_PORT_BASE="${MASTER_PORT_BASE:-27831}"
 
 # Space-separated physical GPU IDs. Downstream jobs are deterministically
 # sharded over these devices after each checkpoint has finished pre-training.
-EVAL_CUDA_DEVICES="${EVAL_CUDA_DEVICES:-0 1}"
+EVAL_FT_CUDA_DEVICES="${EVAL_FT_CUDA_DEVICES:-0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1}"
+EVAL_LP_CUDA_DEVICES="${EVAL_LP_CUDA_DEVICES:-0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1}"
 EVAL_DATASETS="${EVAL_DATASETS:-New_FUSAR}"
 EVAL_PROTOCOLS="${EVAL_PROTOCOLS:-MIM_finetune MIM_linear}"
 EVAL_SHOTS="${EVAL_SHOTS:-10 20 40}"
@@ -204,9 +205,11 @@ PY
 evaluate_checkpoint() {
   local tag="$1"
   local checkpoint="$2"
+  local protocol="$3"
+  local device_list="$4"
   local output_dir="$OUTPUT_ROOT/$tag"
   local -a devices pids
-  read -r -a devices <<< "$EVAL_CUDA_DEVICES"
+  read -r -a devices <<< "$device_list"
   if [[ ${#devices[@]} -eq 0 ]]; then
     echo "EVAL_CUDA_DEVICES must contain at least one GPU ID" >&2
     exit 2
@@ -215,14 +218,14 @@ evaluate_checkpoint() {
   local num_shards="${#devices[@]}"
   local shard worker_pid failed=0
   pids=()
-  log "Evaluate $tag with $num_shards downstream shard(s)"
+  log "Evaluate $tag: protocol=$protocol, shards=$num_shards"
   for ((shard = 0; shard < num_shards; shard++)); do
     env \
       CUDA_VISIBLE_DEVICES="${devices[$shard]}" \
       CHECKPOINT="$checkpoint" \
       OUTPUT_DIR="$output_dir" \
       DATASETS="$EVAL_DATASETS" \
-      PROTOCOLS="$EVAL_PROTOCOLS" \
+      PROTOCOLS="$protocol" \
       SHOTS="$EVAL_SHOTS" \
       SEEDS="$EVAL_SEEDS" \
       LR="$EVAL_LR" \
@@ -235,7 +238,7 @@ evaluate_checkpoint() {
       NUM_SHARDS="$num_shards" \
       SHARD_ID="$shard" \
       bash scripts/run_sarjepa_fewshot_all.sh \
-      > "$LOG_ROOT/${tag}.eval.shard${shard}.log" 2>&1 &
+      > "$LOG_ROOT/${tag}.${protocol}.shard${shard}.log" 2>&1 &
     worker_pid="$!"
     pids+=("$worker_pid")
     log "Started $tag shard=$shard/$num_shards GPU=${devices[$shard]} PID=$worker_pid"
@@ -248,10 +251,10 @@ evaluate_checkpoint() {
     fi
   done
   if [[ "$failed" == "1" ]]; then
-    echo "Downstream evaluation failed for $tag; inspect $LOG_ROOT/${tag}.eval.shard*.log" >&2
+    echo "Downstream evaluation failed for $tag $protocol; inspect $LOG_ROOT/${tag}.${protocol}.shard*.log" >&2
     exit 1
   fi
-  log "Finished downstream evaluation: $tag"
+  log "Finished downstream evaluation: $tag $protocol"
 }
 
 validate_inputs
@@ -289,7 +292,13 @@ if [[ "$ACTION" == "all" || "$ACTION" == "eval" ]]; then
 
   while IFS=$'\t' read -r tag weight checkpoint datasets protocols shots seeds; do
     [[ "$tag" == "model" ]] && continue
-    evaluate_checkpoint "$tag" "$checkpoint"
+    for protocol in $EVAL_PROTOCOLS; do
+      if [[ "$protocol" == "MIM_linear" || "$protocol" == "linear" ]]; then
+        evaluate_checkpoint "$tag" "$checkpoint" "$protocol" "$EVAL_LP_CUDA_DEVICES"
+      else
+        evaluate_checkpoint "$tag" "$checkpoint" "$protocol" "$EVAL_FT_CUDA_DEVICES"
+      fi
+    done
   done < "$manifest"
 fi
 
