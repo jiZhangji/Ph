@@ -12,7 +12,7 @@ DRY_RUN="${DRY_RUN:-0}"
 STAMP="${STAMP:-$(date -u +%Y%m%d-%H%M%S)}"
 RELEASE_PARENT="${RELEASE_PARENT:-$(dirname "$ROOT")}" 
 RELEASE="${RELEASE:-$RELEASE_PARENT/PhyD-MAE-paper-increment-$STAMP}"
-REMOTE_PREFIX="${REMOTE_PREFIX:-paper_archive_20260818}"
+REMOTE_PREFIX="${REMOTE_PREFIX:-paper_archive_20260818_with_logs}"
 CONTENT="$RELEASE/$REMOTE_PREFIX"
 
 SASGT_OUTPUT="$ROOT/few_shot_classification/finetune/output_sasgt_parameter_sensitivity_lr1e3_10seeds"
@@ -49,6 +49,8 @@ mkdir -p \
   "$CONTENT/weights/lfst_weight_sensitivity" \
   "$CONTENT/weights/manifest_referenced" \
   "$CONTENT/results" \
+  "$CONTENT/logs/pretraining_runs" \
+  "$CONTENT/logs/launchers_and_workers" \
   "$CONTENT/code_snapshot" \
   "$CONTENT/reproducibility/environment" \
   "$CONTENT/reproducibility/data_manifests" \
@@ -170,6 +172,52 @@ copy_csv_without_server_path \
 copy_csv_without_server_path \
   "$LFST_OUTPUT/results_mean_std_max.csv" \
   "$CONTENT/results/lfst_weight_sensitivity/results_mean_std_max.csv"
+
+# Archive pre-training logs for every checkpoint used by the sensitivity and
+# paper ablation studies. Optimizer states and TensorBoard event files remain
+# excluded; these text logs contain the commands, hyperparameters, losses, and
+# checkpoint-saving history needed for audit and reproduction.
+for run in \
+  phyd_sasgt_gamma0_30e_bs1088 \
+  phyd_sasgt_gamma2_30e_bs1088 \
+  phyd_sasgt_w3_30e_bs1088 \
+  phyd_sasgt_w11_30e_bs1088 \
+  phyd_sasgt_tau0p5_30e_bs1088 \
+  phyd_sasgt_tau2_30e_bs1088 \
+  phyd_lfst_weight_0p05_ft250_to300_bs1024 \
+  phyd_lfst_weight_0p1_ft250_to300_bs1024 \
+  phyd_lfst_weight_0p2_ft250_to300_bs1024 \
+  phyd_lfst_weight_0p5_ft250_to300_bs1024 \
+  phyd_lfst_weight_1p0_ft250_to300_bs1024
+do
+  run_dir="$ROOT/runs/$run"
+  [[ -d "$run_dir" ]] || continue
+  find "$run_dir" -type f \
+    \( -name '*.log' -o -name 'log.txt' -o -name '*.txt' -o -name '*.json' \
+       -o -name '*.yaml' -o -name '*.yml' \) \
+    -print0 |
+  while IFS= read -r -d '' metadata_file; do
+    relative="${metadata_file#"$ROOT/runs/"}"
+    destination="$CONTENT/logs/pretraining_runs/$relative"
+    mkdir -p "$(dirname "$destination")"
+    cp -f "$metadata_file" "$destination"
+  done
+done
+
+# Archive launcher and worker logs. This includes the resumable dynamic queue
+# logs and the original sensitivity-run launch logs, while excluding binary
+# TensorBoard/event artifacts.
+if [[ -d "$ROOT/logs" ]]; then
+  find "$ROOT/logs" -type f \
+    \( -name '*.log' -o -name 'log.txt' -o -name '*.txt' -o -name '*.json' \) \
+    -print0 |
+  while IFS= read -r -d '' log_file; do
+    relative="${log_file#"$ROOT/logs/"}"
+    destination="$CONTENT/logs/launchers_and_workers/$relative"
+    mkdir -p "$(dirname "$destination")"
+    cp -f "$log_file" "$destination"
+  done
+fi
 
 for result_dir in "$FINETUNE_ROOT"/output*; do
   [[ -d "$result_dir" ]] || continue
@@ -403,6 +451,11 @@ if len(result_logs) < 1320:
     raise RuntimeError(f"Expected at least 1320 downstream logs, found {len(result_logs)}")
 print(json.dumps(manifest, indent=2))
 PY
+
+find "$CONTENT" -type f \
+  \( -name '*.log' -o -name 'log.txt' -o -name 'results_summary.txt' \) \
+  -printf '%P\n' | sort \
+  > "$CONTENT/logs/ARCHIVED_LOG_FILES.txt"
 
 (
   cd "$RELEASE"
