@@ -333,9 +333,11 @@ count_complete() {
     echo 0
     return
   fi
-  find "$root" -type f \
-    -path "*/${protocol}/vit_b16_*shots/seed*/log.txt" \
-    -exec grep -l '^\* accuracy:' {} + 2>/dev/null | wc -l
+  {
+    find "$root" -type f \
+      -path "*/${protocol}/vit_b16_*shots/seed*/log.txt" \
+      -exec grep -l '^\* accuracy:' {} + 2>/dev/null || true
+  } | wc -l
 }
 
 show_status() {
